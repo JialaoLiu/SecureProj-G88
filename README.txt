@@ -1,10 +1,5 @@
 EchoChat - Distributed Secure Chat System
-=========================================
-
-Authors: Group G88
-University of Adelaide - Secure Programming Assignment
-WARNING: This version contains intentional vulnerabilities for educational purposes.
-
+Group G88
 COMPILATION
 -----------
 mvn clean compile
