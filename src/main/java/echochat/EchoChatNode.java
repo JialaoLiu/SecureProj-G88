@@ -22,12 +22,14 @@ public class EchoChatNode {
     private final Map<String, NodeInfo> knownNodes = new ConcurrentHashMap<>();
     private final ObjectMapper mapper = new ObjectMapper();
     private final CryptoManager cryptoManager;
+    private final JWTManager jwtManager;
     private final Scanner scanner = new Scanner(System.in);
 
     public EchoChatNode(String nodeId, int port) {
         this.nodeId = nodeId;
         this.port = port;
         this.cryptoManager = new CryptoManager();
+        this.jwtManager = new JWTManager(nodeId, cryptoManager.getPublicKeyString());
         this.server = new ChatWebSocketServer(new InetSocketAddress(port));
     }
 
@@ -95,6 +97,23 @@ public class EchoChatNode {
             case "status":
                 showStatus();
                 break;
+            case "auth":
+                if (parts.length > 1) {
+                    authenticateNode(parts[1]);
+                } else {
+                    System.out.println("Usage: auth <nodeId>");
+                }
+                break;
+            case "sessions":
+                showSessions();
+                break;
+            case "revoke":
+                if (parts.length > 1) {
+                    jwtManager.revokeSession(parts[1]);
+                } else {
+                    System.out.println("Usage: revoke <nodeId>");
+                }
+                break;
             default:
                 System.out.println("Unknown command. Type 'help' for available commands.");
         }
@@ -106,6 +125,9 @@ public class EchoChatNode {
         System.out.println("  list                    - List all known nodes");
         System.out.println("  msg <nodeId> <message> - Send private message");
         System.out.println("  broadcast <message>     - Send message to all nodes");
+        System.out.println("  auth <nodeId>           - Authenticate with node");
+        System.out.println("  sessions                - Show active sessions");
+        System.out.println("  revoke <nodeId>         - Revoke node session");
         System.out.println("  status                  - Show node status");
         System.out.println("  quit/exit               - Shutdown node");
     }
@@ -175,11 +197,21 @@ public class EchoChatNode {
                 case "NODE_INFO":
                     handleNodeInfo(msg, conn);
                     break;
+                case "AUTH_REQUEST":
+                    handleAuthRequest(msg, conn);
+                    break;
+                case "AUTH_RESPONSE":
+                    handleAuthResponse(msg);
+                    break;
                 case "PRIVATE_MESSAGE":
-                    handlePrivateMessage(msg);
+                    if (validateMessageAuth(msg)) {
+                        handlePrivateMessage(msg);
+                    }
                     break;
                 case "BROADCAST":
-                    handleBroadcast(msg);
+                    if (validateMessageAuth(msg)) {
+                        handleBroadcast(msg);
+                    }
                     break;
                 case "ROUTING":
                     handleRouting(msg);
@@ -380,6 +412,97 @@ public class EchoChatNode {
         @Override
         public void onStart() {
             System.out.println("WebSocket server started on port " + port);
+        }
+    }
+
+    // JWT Authentication Methods
+    private void authenticateNode(String targetNodeId) {
+        if (!knownNodes.containsKey(targetNodeId)) {
+            System.out.println("Unknown node: " + targetNodeId);
+            return;
+        }
+
+        try {
+            String challenge = jwtManager.generateChallenge();
+            JWTManager.AuthMessage authMsg = jwtManager.createAuthMessage(targetNodeId, challenge);
+
+            Message msg = new Message();
+            msg.type = "AUTH_REQUEST";
+            msg.senderId = nodeId;
+            msg.targetId = targetNodeId;
+            msg.data = mapper.writeValueAsString(authMsg);
+
+            routeMessage(msg);
+            System.out.println("Authentication request sent to " + targetNodeId);
+
+        } catch (Exception e) {
+            System.out.println("Failed to authenticate: " + e.getMessage());
+        }
+    }
+
+    private void handleAuthRequest(Message msg, WebSocket conn) {
+        try {
+            JWTManager.AuthMessage authMsg = mapper.readValue(msg.data, JWTManager.AuthMessage.class);
+
+            if (jwtManager.validateAuthMessage(authMsg)) {
+                // Add to trusted nodes
+                jwtManager.addTrustedNode(authMsg.nodeId, "temp_key");
+
+                // Send response
+                JWTManager.AuthMessage responseMsg = jwtManager.createAuthMessage(authMsg.nodeId, authMsg.challenge);
+
+                Message response = new Message();
+                response.type = "AUTH_RESPONSE";
+                response.senderId = nodeId;
+                response.targetId = authMsg.nodeId;
+                response.data = mapper.writeValueAsString(responseMsg);
+
+                conn.send(mapper.writeValueAsString(response));
+                System.out.println("Authentication granted to " + authMsg.nodeId);
+            } else {
+                System.out.println("Authentication failed for " + authMsg.nodeId);
+            }
+
+        } catch (Exception e) {
+            System.out.println("Failed to handle auth request: " + e.getMessage());
+        }
+    }
+
+    private void handleAuthResponse(Message msg) {
+        try {
+            JWTManager.AuthMessage authMsg = mapper.readValue(msg.data, JWTManager.AuthMessage.class);
+
+            if (jwtManager.validateAuthMessage(authMsg)) {
+                jwtManager.addTrustedNode(authMsg.nodeId, "temp_key");
+                System.out.println("Successfully authenticated with " + authMsg.nodeId);
+            } else {
+                System.out.println("Authentication response validation failed from " + authMsg.nodeId);
+            }
+
+        } catch (Exception e) {
+            System.out.println("Failed to handle auth response: " + e.getMessage());
+        }
+    }
+
+    private boolean validateMessageAuth(Message msg) {
+        // Check if sender has valid session
+        if (!jwtManager.hasValidSession(msg.senderId)) {
+            System.out.println("No valid session for " + msg.senderId + " - message rejected");
+            return false;
+        }
+
+        // Additional validation could be added here
+        return true;
+    }
+
+    private void showSessions() {
+        System.out.println("Active JWT Sessions:");
+        System.out.println("  Active sessions: " + jwtManager.getActiveSessionCount());
+        System.out.println("  Trusted nodes: " + jwtManager.getTrustedNodes().size());
+
+        for (String nodeId : jwtManager.getTrustedNodes().keySet()) {
+            String status = jwtManager.hasValidSession(nodeId) ? "Active" : "Expired";
+            System.out.println("    " + nodeId + " - " + status);
         }
     }
 

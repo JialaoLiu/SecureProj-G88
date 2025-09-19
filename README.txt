@@ -20,5 +20,8 @@ connect <host:port>
 list
 msg <nodeId> <message>
 broadcast <message>
+auth <nodeId>
+sessions
+revoke <nodeId>
 status
 quit
