@@ -1,0 +1,9 @@
+devserver/ChatServer$Rate.class
+crypto/CryptoPorts.class
+socp/Message.class
+devserver/MessageRouter.class
+socp/Main.class
+crypto/NullCrypto.class
+socp/MessageParser.class
+devserver/ChatServer.class
+socp/MessageTypes.class
