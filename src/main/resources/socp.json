@@ -1,0 +1,389 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/socp.schema.json",
+  "title": "SOCP Protocol Message",
+  "type": "object",
+  "required": ["type", "from", "to", "ts", "payload", "sig"],
+  "properties": {
+    "type": { 
+      "type": "string",
+      "enum": [
+        "SERVER_HELLO_JOIN",
+        "SERVER_WELCOME", 
+        "SERVER_ANNOUNCE",
+        "USER_ADVERTISE",
+        "USER_REMOVE",
+        "SERVER_DELIVER",
+        "HEARTBEAT",
+        "USER_HELLO",
+        "MSG_DIRECT",
+        "USER_DELIVER",
+        "PUBLIC_CHANNEL_ADD",
+        "PUBLIC_CHANNEL_UPDATED",
+        "PUBLIC_CHANNEL_KEY_SHARE",
+        "MSG_PUBLIC_CHANNEL",
+        "FILE_START",
+        "FILE_CHUNK",
+        "FILE_END",
+        "ACK",
+        "ERROR"
+      ]
+    },
+    "from": { "type": "string" },
+    "to": { "type": "string" },
+    "ts": { "type": "integer" },
+    "payload": { "type": "object" },
+    "sig": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "SERVER_HELLO_JOIN" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["host","port","pubkey"],
+            "properties": {
+              "host": { "type": "string" },
+              "port": { "type": "integer" },
+              "pubkey": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "SERVER_WELCOME" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["assigned_id","clients"],
+            "properties": {
+              "assigned_id": { "type": "string" },
+              "clients": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["user_id","host","port","pubkey"],
+                  "properties": {
+                    "user_id": { "type": "string" },
+                    "host": { "type": "string" },
+                    "port": { "type": "integer" },
+                    "pubkey": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "SERVER_ANNOUNCE" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["host","port","pubkey"],
+            "properties": {
+              "host": { "type": "string" },
+              "port": { "type": "integer" },
+              "pubkey": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_ADVERTISE" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["user_id","server_id","meta"],
+            "properties": {
+              "user_id": { "type": "string" },
+              "server_id": { "type": "string" },
+              "meta": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_REMOVE" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["user_id","server_id"],
+            "properties": {
+              "user_id": { "type": "string" },
+              "server_id": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "SERVER_DELIVER" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["user_id","ciphertext","sender","sender_pub","content_sig"],
+            "properties": {
+              "user_id": { "type": "string" },
+              "ciphertext": { "type": "string" },
+              "sender": { "type": "string" },
+              "sender_pub": { "type": "string" },
+              "content_sig": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "HEARTBEAT" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_HELLO" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["client","pubkey","enc_pubkey"],
+            "properties": {
+              "client": { "type": "string" },
+              "pubkey": { "type": "string" },
+              "enc_pubkey": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "MSG_DIRECT" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["ciphertext","sender_pub","content_sig"],
+            "properties": {
+              "ciphertext": { "type": "string" },
+              "sender_pub": { "type": "string" },
+              "content_sig": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_DELIVER" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["ciphertext","sender","sender_pub","content_sig"],
+            "properties": {
+              "ciphertext": { "type": "string" },
+              "sender": { "type": "string" },
+              "sender_pub": { "type": "string" },
+              "content_sig": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "PUBLIC_CHANNEL_ADD" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["add","if_version"],
+            "properties": {
+              "add": { "type": "array", "items": { "type": "string" } },
+              "if_version": { "type": "integer" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "PUBLIC_CHANNEL_UPDATED" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["version","wraps"],
+            "properties": {
+              "version": { "type": "integer" },
+              "wraps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["member_id","wrapped_key"],
+                  "properties": {
+                    "member_id": { "type": "string" },
+                    "wrapped_key": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "PUBLIC_CHANNEL_KEY_SHARE" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["shares","creator_pub","content_sig"],
+            "properties": {
+              "shares": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["member","wrapped_public_channel_key"],
+                  "properties": {
+                    "member": { "type": "string" },
+                    "wrapped_public_channel_key": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "creator_pub": { "type": "string" },
+              "content_sig": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "MSG_PUBLIC_CHANNEL" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["ciphertext","sender_pub","content_sig"],
+            "properties": {
+              "ciphertext": { "type": "string" },
+              "sender_pub": { "type": "string" },
+              "content_sig": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "FILE_START" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["file_id","name","size","sha256","mode"],
+            "properties": {
+              "file_id": { "type": "string" },
+              "name": { "type": "string" },
+              "size": { "type": "integer" },
+              "sha256": { "type": "string" },
+              "mode": { "enum": ["dm","public"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "FILE_CHUNK" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["file_id","index","ciphertext"],
+            "properties": {
+              "file_id": { "type": "string" },
+              "index": { "type": "integer" },
+              "ciphertext": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "FILE_END" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["file_id"],
+            "properties": {
+              "file_id": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ACK" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["msg_ref"],
+            "properties": {
+              "msg_ref": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ERROR" } } },
+      "then": { 
+        "properties": { 
+          "payload": {
+            "type": "object",
+            "required": ["code","detail"],
+            "properties": {
+              "code": { "type": "string" },
+              "detail": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}
