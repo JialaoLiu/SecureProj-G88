@@ -1,5 +1,4 @@
-/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/echochat/EchoChatNode.java
-/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/echochat/CryptoManager.java
-/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/echochat/NodeInfo.java
-/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/echochat/Message.java
-/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/echochat/JWTManager.java
+/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/MessageParser/MessageTypes.java
+/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/MessageParser/MessageParser.java
+/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/MessageParser/Main.java
+/Users/jarvislao/Desktop/StudyFile/Semester2/Secure Programming/Project/G88-SecureProj/src/main/java/MessageParser/Message.java

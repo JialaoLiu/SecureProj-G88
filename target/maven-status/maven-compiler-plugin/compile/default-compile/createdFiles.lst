@@ -1,8 +1,0 @@
-echochat/NodeInfo.class
-echochat/EchoChatNode$1.class
-echochat/JWTManager.class
-echochat/Message.class
-echochat/EchoChatNode.class
-echochat/JWTManager$AuthMessage.class
-echochat/EchoChatNode$ChatWebSocketServer.class
-echochat/CryptoManager.class
