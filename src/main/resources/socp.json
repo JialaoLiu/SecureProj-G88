@@ -3,13 +3,13 @@
   "$id": "https://example.com/socp.schema.json",
   "title": "SOCP Protocol Message",
   "type": "object",
-  "required": ["type", "from", "to", "ts", "payload", "sig"],
+  "required": ["type", "from", "to", "ts", "nonce", "payload", "sig"],
   "properties": {
-    "type": { 
+    "type": {
       "type": "string",
       "enum": [
         "SERVER_HELLO_JOIN",
-        "SERVER_WELCOME", 
+        "SERVER_WELCOME",
         "SERVER_ANNOUNCE",
         "USER_ADVERTISE",
         "USER_REMOVE",
@@ -32,6 +32,12 @@
     "from": { "type": "string" },
     "to": { "type": "string" },
     "ts": { "type": "integer" },
+    "nonce": {
+      "type": "string",
+      "description": "Cryptographically secure random nonce for replay attack prevention",
+      "minLength": 16,
+      "maxLength": 64
+    },
     "payload": { "type": "object" },
     "sig": { "type": "string" }
   },
