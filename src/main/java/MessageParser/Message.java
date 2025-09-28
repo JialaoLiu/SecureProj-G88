@@ -7,6 +7,7 @@ public class Message {
     private String from;
     private String to;
     private long ts;
+    private String nonce;
     private Map<String, Object> payload;
     private String sig;
 
@@ -22,6 +23,9 @@ public class Message {
 
     public long getTs() { return ts; }
     public void setTs(long ts) { this.ts = ts; }
+
+    public String getNonce() { return nonce; }
+    public void setNonce(String nonce) { this.nonce = nonce; }
 
     public Map<String, Object> getPayload() { return payload; }
     public void setPayload(Map<String, Object> payload) { this.payload = payload; }
