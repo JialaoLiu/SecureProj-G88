@@ -70,6 +70,10 @@ export class WS {
   }
 
   send(obj: any) {
+    // Add nonce if not already present
+    if (!obj.nonce) {
+      obj.nonce = this.generateNonce();
+    }
     this.ws?.send(JSON.stringify(obj));
   }
 

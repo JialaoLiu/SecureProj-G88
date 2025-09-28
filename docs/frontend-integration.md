@@ -9,6 +9,7 @@
   "from": "frontend-dev",
   "to": "server",
   "ts": 1700000000000,
+  "nonce": "a1b2c3d4e5f6789012345678901234ab",
   "payload": {
     "client": "frontend-dev",
     "pubkey": "dev-pubkey",
@@ -25,6 +26,7 @@
   "from": "frontend-dev",
   "to": "server",
   "ts": 1700000000000,
+  "nonce": "b2c3d4e5f6789012345678901234abcd",
   "payload": {},
   "sig": "dev-mock"
 }
@@ -37,6 +39,7 @@
   "from": "frontend-dev",
   "to": "target-user",
   "ts": 1700000000000,
+  "nonce": "c3d4e5f6789012345678901234abcdef",
   "payload": {
     "ciphertext": "Hello World",
     "sender_pub": "dev-pubkey",
@@ -49,6 +52,7 @@
 ## 开发约定
 
 - **签名占位**: 所有 `sig` 字段使用 `"dev-mock"` 占位
+- **Nonce字段**: 每条消息包含32位十六进制随机nonce，防重放攻击
 - **后续集成**: 等 Person B 提供真实加密实现后替换
 - **Schema严格遵守**: 前端严格按 `src/main/resources/socp.json` 组包
 - **开发桩端口**: `devserver.ChatServer` 使用 8080 端口
