@@ -24,6 +24,15 @@ public class MessageTypes {
     public static final String FILE_END = "FILE_END";
     public static final String ACK = "ACK";
     public static final String ERROR = "ERROR";
+
+    // Kademlia Discovery/Lookup Messages
+    public static final String FIND_NODE = "FIND_NODE";
+    public static final String FIND_NODE_RESP = "FIND_NODE_RESP";
+
+    // K-V Storage Messages
+    public static final String STORE_VALUE = "STORE_VALUE";
+    public static final String FIND_VALUE = "FIND_VALUE";
+    public static final String VALUE_RESPONSE = "VALUE_RESPONSE";
     
     /**
      * Validate if a message type is supported
@@ -47,7 +56,12 @@ public class MessageTypes {
                FILE_CHUNK.equals(type) ||
                FILE_END.equals(type) ||
                ACK.equals(type) ||
-               ERROR.equals(type);
+               ERROR.equals(type) ||
+               FIND_NODE.equals(type) ||
+               FIND_NODE_RESP.equals(type) ||
+               STORE_VALUE.equals(type) ||
+               FIND_VALUE.equals(type) ||
+               VALUE_RESPONSE.equals(type);
     }
     
     /**
@@ -60,7 +74,8 @@ public class MessageTypes {
             HEARTBEAT, USER_HELLO, MSG_DIRECT, USER_DELIVER,
             PUBLIC_CHANNEL_ADD, PUBLIC_CHANNEL_UPDATED, PUBLIC_CHANNEL_KEY_SHARE,
             MSG_PUBLIC_CHANNEL, FILE_START, FILE_CHUNK, FILE_END,
-            ACK, ERROR
+            ACK, ERROR, FIND_NODE, FIND_NODE_RESP,
+            STORE_VALUE, FIND_VALUE, VALUE_RESPONSE
         };
     }
 }

@@ -8,20 +8,46 @@ import java.net.InetSocketAddress;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 import org.json.JSONTokener;
 import org.everit.json.schema.Schema;
 import org.everit.json.schema.loader.SchemaLoader;
+
+import socp.dht.DhtService;
+import socp.dht.KademliaNode;
+import socp.MessageParser;
 
 public class ChatServer extends WebSocketServer {
     private final Schema schema;
     private final Map<WebSocket, Rate> rates = new ConcurrentHashMap<>();
     private final Set<String> usedNonces = ConcurrentHashMap.newKeySet();
     private final Map<String, WebSocket> clients = new ConcurrentHashMap<>();
+    private final Map<String, UserInfo> connectedUsers = new ConcurrentHashMap<>();
+    private final DhtService dhtService;
 
     static class Rate { long windowStartMs = System.currentTimeMillis(); int count = 0; }
+    static class UserInfo {
+        String userId;
+        long lastSeen;
+        String status;
+        String activity;
+
+        UserInfo(String userId, String status, String activity) {
+            this.userId = userId;
+            this.lastSeen = System.currentTimeMillis();
+            this.status = status;
+            this.activity = activity;
+        }
+
+        void updateActivity(String activity) {
+            this.activity = activity;
+            this.lastSeen = System.currentTimeMillis();
+        }
+    }
 
     public ChatServer(int port) {
         super(new InetSocketAddress(port));
@@ -33,6 +59,21 @@ public class ChatServer extends WebSocketServer {
             .draftV7Support()
             .build();
         this.schema = loader.load().build();
+
+        // 初始化DHT服务
+        try {
+            MessageParser parser = new MessageParser("socp.json");
+            this.dhtService = new DhtService(
+                "server",
+                new InetSocketAddress("127.0.0.1", port),
+                "server-pubkey",
+                parser,
+                this::sendToPeer
+            );
+            System.out.println("[DHT] DHT service initialized");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize DHT service", e);
+        }
     }
 
     @Override public void onStart() { System.out.println("[WS] started on " + getAddress()); }
@@ -44,8 +85,22 @@ public class ChatServer extends WebSocketServer {
     @Override public void onClose(WebSocket conn, int code, String reason, boolean remote) {
         System.out.println("[WS] close " + conn.getRemoteSocketAddress() + " reason=" + reason);
         rates.remove(conn);
-        // 移除客户端注册
+
+        // 移除客户端注册并从DHT中移除
+        String disconnectedUser = null;
+        for (Map.Entry<String, WebSocket> entry : clients.entrySet()) {
+            if (entry.getValue() == conn) {
+                disconnectedUser = entry.getKey();
+                break;
+            }
+        }
+
         clients.entrySet().removeIf(entry -> entry.getValue() == conn);
+        if (disconnectedUser != null) {
+            connectedUsers.remove(disconnectedUser);
+            System.out.println("[WS] user disconnected: " + disconnectedUser);
+        }
+
         for (Map.Entry<String, WebSocket> entry : clients.entrySet()) {
             System.out.println("[WS] remaining client: " + entry.getKey());
         }
@@ -94,8 +149,24 @@ public class ChatServer extends WebSocketServer {
                 String clientId = payload.optString("client", from);
                 if (clientId != null && !clientId.isEmpty()) {
                     clients.put(clientId, conn);
+                    // 注册到DHT和在线用户列表
+                    connectedUsers.put(clientId, new UserInfo(clientId, "online", "Connected"));
                     System.out.println("[WS] registered client: " + clientId);
                 }
+            }
+
+            // 处理在线用户查询
+            if ("USER_LIST_REQUEST".equals(type)) {
+                JSONObject response = createOnlineUsersResponse();
+                conn.send(response.toString());
+                return;
+            }
+
+            // 更新用户活动状态
+            if (from != null && connectedUsers.containsKey(from)) {
+                String activity = "HEARTBEAT".equals(type) ? "Online" :
+                                "MSG_DIRECT".equals(type) ? "Typing..." : "Active";
+                connectedUsers.get(from).updateActivity(activity);
             }
 
             // 路由逻辑：如果 to != "server"，转发给目标客户端
@@ -135,6 +206,42 @@ public class ChatServer extends WebSocketServer {
         o.put("payload", payload);
         o.put("sig", "dev-mock");
         return o.toString();
+    }
+
+    private JSONObject createOnlineUsersResponse() {
+        JSONObject response = new JSONObject();
+        response.put("type", "USER_LIST_RESPONSE");
+        response.put("from", "server");
+        response.put("to", "client");
+        response.put("ts", Instant.now().toEpochMilli());
+        response.put("nonce", java.util.UUID.randomUUID().toString().replace("-", ""));
+
+        JSONArray users = new JSONArray();
+        for (UserInfo user : connectedUsers.values()) {
+            JSONObject userObj = new JSONObject();
+            userObj.put("id", user.userId);
+            userObj.put("name", user.userId);
+            userObj.put("status", user.status);
+            userObj.put("activity", user.activity);
+            userObj.put("lastSeen", user.lastSeen);
+            users.put(userObj);
+        }
+
+        JSONObject payload = new JSONObject();
+        payload.put("online_users", users);
+        payload.put("total_count", connectedUsers.size());
+
+        response.put("payload", payload);
+        response.put("sig", "server-sig");
+        return response;
+    }
+
+    // DHT通信方法
+    private void sendToPeer(String peerId, String jsonMessage) {
+        WebSocket peerConn = clients.get(peerId);
+        if (peerConn != null && peerConn.isOpen()) {
+            peerConn.send(jsonMessage);
+        }
     }
 
     public static void main(String[] args) {

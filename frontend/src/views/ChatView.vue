@@ -151,13 +151,8 @@ const showMembers = ref(true)
 const searchTerm = ref('')
 const filteredMessages = ref<any[]>([])
 
-// Mock online users (在实际应用中这些数据会来自Person A的DHT查询)
-const onlineUsers = ref([
-  { id: 1, name: 'frontend-dev', status: 'online', activity: 'Testing SOCP' },
-  { id: 2, name: 'server', status: 'online', activity: 'Processing messages' },
-  { id: 3, name: 'alice', status: 'away', activity: 'Idle' },
-  { id: 4, name: 'bob', status: 'dnd', activity: 'Do not disturb' },
-])
+// 真实的在线用户数据（通过DHT查询获取）
+const onlineUsers = ref<any[]>([])
 
 let ws: WS
 
@@ -165,6 +160,13 @@ onMounted(() => {
   ws = new WS(wsUrl)
 
   ws.connect((msg) => {
+    // 处理在线用户列表响应
+    if (msg.type === 'USER_LIST_RESPONSE' && msg.payload && msg.payload.online_users) {
+      onlineUsers.value = msg.payload.online_users
+      console.log('[WS] Updated online users:', onlineUsers.value)
+      return
+    }
+
     messages.value.push(msg)
     searchMessages() // 更新过滤后的消息
     nextTick(() => {
@@ -173,10 +175,17 @@ onMounted(() => {
   })
 
   // 简单连接状态检测
-  setTimeout(() => connected.value = true, 1000)
+  setTimeout(() => {
+    connected.value = true
+    // 连接成功后请求在线用户列表
+    requestOnlineUsers()
+  }, 1000)
 
   // 初始化过滤消息
   filteredMessages.value = messages.value
+
+  // 定期更新在线用户列表
+  setInterval(requestOnlineUsers, 10000) // 每10秒更新一次
 })
 
 onUnmounted(() => {
@@ -248,6 +257,22 @@ function testRateLimit() {
 function clearMessages() {
   messages.value = []
   searchMessages()
+}
+
+function requestOnlineUsers() {
+  if (!connected.value) return
+
+  const userListRequest = {
+    type: "USER_LIST_REQUEST",
+    from: "frontend-dev",
+    to: "server",
+    ts: Date.now(),
+    payload: {},
+    sig: "dev-mock"
+  }
+
+  ws.send(userListRequest)
+  console.log('[WS] Requested online users list')
 }
 
 // Discord-style functions

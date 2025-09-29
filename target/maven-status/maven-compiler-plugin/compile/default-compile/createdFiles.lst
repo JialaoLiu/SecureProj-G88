@@ -1,12 +1,7 @@
 devserver/ChatServer$Rate.class
-socp/Message.class
 crypto/nonceWh.class
-socp/Main.class
-crypto/SOCPCryptoService$DecryptedMessage.class
-crypto/NullCrypto.class
 crypto/NonceCreator.class
 socp/MessageParser.class
-devserver/ChatServer.class
 socp/MessageTypes.class
 crypto/SOCPCryptoService.class
 crypto/SOCPCryptoDemo.class
@@ -18,6 +13,11 @@ devserver/MessageRouter.class
 crypto/SecureCrypto.class
 crypto/Header.class
 crypto/HeaderUtil.class
-crypto/CryptoDemo.class
 crypto/RSAkeypair.class
 crypto/RsaSign.class
+socp/Message.class
+socp/Main.class
+crypto/SOCPCryptoService$DecryptedMessage.class
+crypto/NullCrypto.class
+devserver/ChatServer.class
+crypto/CryptoDemo.class
