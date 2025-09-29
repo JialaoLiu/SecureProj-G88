@@ -24,6 +24,20 @@
           </svg>
         </div>
 
+        <div class="user-info">
+          <div class="current-user">
+            <div :class="['user-avatar', getAvatarClass(currentUser)]">
+              {{ getAvatarInitial(currentUser) }}
+            </div>
+            <span class="username-display">{{ currentUser }}</span>
+          </div>
+          <button @click="handleLogout" class="logout-btn" title="Logout">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path fill="currentColor" d="M16 17v-3H9v-4h7V7l5 5-5 5M14 2a2 2 0 0 1 2 2v2h-2V4H4v16h10v-2h2v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10z"/>
+            </svg>
+          </button>
+        </div>
+
         <button @click="toggleMemberList" class="member-toggle" :class="{ active: showMembers }">
           <svg viewBox="0 0 24 24" width="20" height="20">
             <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
@@ -140,6 +154,14 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { WS } from '../services/ws'
 
+const props = defineProps<{
+  currentUser: string
+}>()
+
+const emit = defineEmits<{
+  logout: []
+}>()
+
 const connected = ref(false)
 const messages = ref<any[]>([])
 const inputMessage = ref('')
@@ -197,13 +219,13 @@ function sendMessage() {
 
   const msg = {
     type: "MSG_DIRECT",
-    from: "frontend-dev",
+    from: props.currentUser,
     to: "test-target",
     ts: Date.now(),
     payload: {
       ciphertext: inputMessage.value, // 简化：直接发明文
-      sender_pub: "dev-pubkey",
-      content_sig: "dev-sig"
+      sender_pub: `${props.currentUser}-pubkey`,
+      content_sig: `${props.currentUser}-sig`
     },
     sig: "dev-mock"
   }
@@ -215,13 +237,17 @@ function sendMessage() {
 function sendHeartbeat() {
   const hb = {
     type: "HEARTBEAT",
-    from: "frontend-dev",
+    from: props.currentUser,
     to: "server",
     ts: Date.now(),
     payload: {},
     sig: "dev-mock"
   }
   ws.send(hb)
+}
+
+function handleLogout() {
+  emit('logout')
 }
 
 function formatTime(ts: number) {
@@ -264,7 +290,7 @@ function requestOnlineUsers() {
 
   const userListRequest = {
     type: "USER_LIST_REQUEST",
-    from: "frontend-dev",
+    from: props.currentUser,
     to: "server",
     ts: Date.now(),
     payload: {},
@@ -808,6 +834,61 @@ function getAvatarClass(from: string) {
   background-color: #36393f;
 }
 
+/* User Info Styles */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.current-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: white;
+  font-size: 12px;
+}
+
+.user-avatar.red { background-color: #ed4245; }
+.user-avatar.blue { background-color: #5865f2; }
+.user-avatar.green { background-color: #3ba55d; }
+.user-avatar.purple { background-color: #9266cc; }
+.user-avatar.orange { background-color: #faa61a; }
+.user-avatar.pink { background-color: #eb459e; }
+
+.username-display {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: #b9bbbe;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.logout-btn:hover {
+  background-color: #ed4245;
+  color: white;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .member-list {
@@ -825,6 +906,10 @@ function getAvatarClass(from: string) {
 
   .quick-actions {
     justify-content: center;
+  }
+
+  .username-display {
+    display: none;
   }
 }
 </style>
