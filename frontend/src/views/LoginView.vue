@@ -176,7 +176,7 @@ async function demoLogin(demoUsername: string) {
 <style scoped>
 .login-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #22223b 0%, #4a4e69 100%);
   display: flex;
   align-items: center;
   justify-content: center;

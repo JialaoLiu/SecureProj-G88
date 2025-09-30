@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
-import ChatView from './views/ChatView.vue'
+import App from './App.vue'
 
-const app = createApp(ChatView)
+const app = createApp(App)
 
 app.mount('#app')

@@ -63,7 +63,7 @@ public class ChatServer extends WebSocketServer {
 
         // 初始化DHT服务
         try {
-            MessageParser.MessageParser parser = new MessageParser.MessageParser("socp.json");
+            socp.MessageParser parser = new socp.MessageParser("socp.json");
             this.dhtService = new DhtService(
                 "server",
                 new InetSocketAddress("127.0.0.1", port),

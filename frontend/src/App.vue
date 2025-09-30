@@ -1,17 +1,20 @@
 <template>
   <div id="app">
-    <LoginView v-if="!isLoggedIn" @login="handleLogin" />
+    <LoginView v-if="!isActuallyLoggedIn" @login="handleLogin" />
     <ChatView v-else :currentUser="currentUser" @logout="handleLogout" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import LoginView from './views/LoginView.vue'
 import ChatView from './views/ChatView.vue'
 
 const isLoggedIn = ref(false)
 const currentUser = ref('')
+
+// 确保只有在有用户名时才认为已登录
+const isActuallyLoggedIn = computed(() => isLoggedIn.value && currentUser.value.trim() !== '')
 
 function handleLogin(username: string) {
   currentUser.value = username

@@ -633,6 +633,7 @@ function getAvatarInitial(name: string) {
 
 function getAvatarClass(from: string) {
   // 根据用户名生成不同颜色
+  if (!from) return 'blue' // 默认颜色
   const colors = ['red', 'blue', 'green', 'purple', 'orange', 'pink']
   const hash = from.split('').reduce((a, b) => {
     a = ((a << 5) - a) + b.charCodeAt(0)
