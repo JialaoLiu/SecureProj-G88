@@ -405,7 +405,7 @@ function startFileUpload(file: File) {
   uploadingFiles.value.push(uploadInfo)
 
   // 发送FILE_START消息
-  ws.sendFile(file, "test-target") // 暂时发送到test-target
+  ws.sendFile(file, currentChatTarget.value)
 }
 
 function cancelUpload(fileId: string) {
@@ -1340,5 +1340,132 @@ function getAvatarClass(from: string) {
 
 .download-link:hover {
   text-decoration: underline;
+}
+
+/* 聊天列表样式 */
+.chat-list {
+  width: 240px;
+  background-color: #2f3136;
+  border-right: 1px solid #202225;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-list-header {
+  padding: 16px;
+  border-bottom: 1px solid #40444b;
+}
+
+.chat-list-header h3 {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.chat-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-item:hover {
+  background-color: #40444b;
+}
+
+.chat-item.active {
+  background-color: #5865f2;
+}
+
+.chat-item.active:hover {
+  background-color: #4752c4;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.group-avatar {
+  background-color: #5865f2;
+  color: white;
+}
+
+.user-avatar {
+  background-color: #747f8d;
+  color: white;
+  position: relative;
+}
+
+.user-avatar.online::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background-color: #3ba55d;
+  border: 2px solid #2f3136;
+  border-radius: 50%;
+}
+
+.chat-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-name {
+  font-weight: 500;
+  color: #ffffff;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.chat-preview {
+  font-size: 12px;
+  color: #b9bbbe;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unread-badge {
+  background-color: #ed4245;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 </style>
