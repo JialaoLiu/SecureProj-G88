@@ -77,6 +77,93 @@ export class WS {
     this.ws?.send(JSON.stringify(obj));
   }
 
+  async sendFile(file: File, to: string) {
+    const fileId = this.generateFileId();
+    const chunkSize = 256 * 1024; // 256KB chunks
+    const totalChunks = Math.ceil(file.size / chunkSize);
+
+    // Calculate SHA256 hash
+    const sha256 = await this.calculateSHA256(file);
+
+    // Send FILE_START
+    const fileStart = {
+      type: "FILE_START",
+      from: "frontend-dev",
+      to: to,
+      ts: Date.now(),
+      nonce: this.generateNonce(),
+      payload: {
+        file_id: fileId,
+        name: file.name,
+        size: file.size,
+        sha256: sha256,
+        mode: to === "*" ? "public" : "dm"
+      },
+      sig: "dev-mock"
+    };
+
+    this.send(fileStart);
+
+    // Send chunks with delay to respect rate limiting
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+
+      const arrayBuffer = await chunk.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64Data = btoa(String.fromCharCode(...uint8Array));
+
+      const fileChunk = {
+        type: "FILE_CHUNK",
+        from: "frontend-dev",
+        to: to,
+        ts: Date.now(),
+        nonce: this.generateNonce(),
+        payload: {
+          file_id: fileId,
+          index: i,
+          ciphertext: base64Data
+        },
+        sig: "dev-mock"
+      };
+
+      this.send(fileChunk);
+
+      // Rate limiting: delay between chunks (100ms = 10 chunks/second)
+      if (i < totalChunks - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // Send FILE_END
+    const fileEnd = {
+      type: "FILE_END",
+      from: "frontend-dev",
+      to: to,
+      ts: Date.now(),
+      nonce: this.generateNonce(),
+      payload: {
+        file_id: fileId
+      },
+      sig: "dev-mock"
+    };
+
+    this.send(fileEnd);
+    console.log(`[FileTransfer] Sent file: ${file.name} (${file.size} bytes, ${totalChunks} chunks)`);
+  }
+
+  private generateFileId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  }
+
+  private async calculateSHA256(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   disconnect() {
     this.timer && clearInterval(this.timer);
     this.reconnectTimer && clearTimeout(this.reconnectTimer);
