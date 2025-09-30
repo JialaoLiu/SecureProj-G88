@@ -49,6 +49,51 @@
 
     <!-- Main Content -->
     <div class="main-content">
+      <!-- Chat List Sidebar -->
+      <div class="chat-list">
+        <div class="chat-list-header">
+          <h3>Chats</h3>
+        </div>
+        <div class="chat-items">
+          <!-- Group Chat -->
+          <div
+            class="chat-item"
+            :class="{ active: currentChatType === 'group' }"
+            @click="selectGroupChat()"
+          >
+            <div class="chat-avatar group-avatar">#</div>
+            <div class="chat-info">
+              <div class="chat-name">General</div>
+              <div class="chat-preview">{{ getLastGroupMessage() }}</div>
+            </div>
+            <div v-if="getUnreadCount('group') > 0" class="unread-badge">
+              {{ getUnreadCount('group') }}
+            </div>
+          </div>
+
+          <!-- Private Chats -->
+          <div
+            v-for="user in onlineUsers"
+            :key="user.id"
+            v-show="user.id !== currentUser"
+            class="chat-item"
+            :class="{ active: currentChatType === 'private' && currentChatTarget === user.id }"
+            @click="selectPrivateChat(user.id)"
+          >
+            <div :class="['chat-avatar', 'user-avatar', user.status]">
+              {{ getAvatarInitial(user.name) }}
+            </div>
+            <div class="chat-info">
+              <div class="chat-name">{{ user.name }}</div>
+              <div class="chat-preview">{{ getLastPrivateMessage(user.id) }}</div>
+            </div>
+            <div v-if="getUnreadCount(user.id) > 0" class="unread-badge">
+              {{ getUnreadCount(user.id) }}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Chat Area -->
       <div class="chat-area">
         <!-- Messages -->
@@ -84,6 +129,15 @@
                 <div v-else-if="msg.type === 'ERROR'" class="error-msg">
                   ⚠️ {{ msg.payload.detail }}
                 </div>
+                <div v-else-if="msg.type === 'FILE_START'" class="file-msg">
+                  File transfer started: {{ msg.payload.name }} ({{ formatFileSize(msg.payload.size) }})
+                </div>
+                <div v-else-if="msg.type === 'FILE_END'" class="file-msg">
+                  File transfer completed: {{ getFileFromId(msg.payload.file_id) }}
+                  <a v-if="receivedFiles[msg.payload.file_id]" :href="receivedFiles[msg.payload.file_id].url" :download="receivedFiles[msg.payload.file_id].name" class="download-link">
+                    Download
+                  </a>
+                </div>
                 <div v-else class="raw-msg">
                   <details>
                     <summary>{{ msg.type }} payload</summary>
@@ -95,17 +149,47 @@
           </div>
         </div>
 
+        <!-- File Upload Progress -->
+        <div v-if="uploadingFiles.length > 0" class="file-upload-area">
+          <div v-for="upload in uploadingFiles" :key="upload.id" class="upload-item">
+            <div class="upload-header">
+              <span class="upload-name">File: {{ upload.fileName }}</span>
+              <span class="upload-size">{{ formatFileSize(upload.totalSize) }}</span>
+              <button @click="cancelUpload(upload.id)" class="cancel-btn">Cancel</button>
+            </div>
+            <div class="upload-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: upload.progress + '%' }"></div>
+              </div>
+              <span class="progress-text">{{ upload.progress.toFixed(1) }}%</span>
+            </div>
+            <div class="upload-status" :class="upload.status">
+              {{ upload.statusText }}
+            </div>
+          </div>
+        </div>
+
         <!-- Message Input -->
         <div class="message-input-area">
           <div class="input-wrapper">
             <input
               v-model="inputMessage"
               @keyup.enter="sendMessage"
-              :placeholder="`Message #socp-secure-chat`"
+              :placeholder="getInputPlaceholder()"
               :disabled="!connected"
               class="message-input"
             />
             <div class="input-buttons">
+              <input
+                type="file"
+                ref="fileInput"
+                @change="onFileSelected"
+                style="display: none"
+                multiple
+              />
+              <button @click="$refs.fileInput.click()" :disabled="!connected" class="file-btn" title="Send file">
+                File
+              </button>
               <button @click="sendMessage" :disabled="!connected || !inputMessage.trim()" class="send-btn">
                 <svg viewBox="0 0 24 24" width="16" height="16">
                   <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -117,13 +201,13 @@
           <!-- Quick Actions -->
           <div class="quick-actions">
             <button @click="sendHeartbeat" :disabled="!connected" class="quick-btn">
-              💓 Heartbeat
+              Heartbeat
             </button>
             <button @click="testRateLimit" :disabled="!connected" class="quick-btn">
-              ⚡ Rate Test
+              Rate Test
             </button>
             <button @click="clearMessages" class="quick-btn">
-              🗑️ Clear
+              Clear
             </button>
           </div>
         </div>
@@ -176,6 +260,17 @@ const filteredMessages = ref<any[]>([])
 // 真实的在线用户数据（通过DHT查询获取）
 const onlineUsers = ref<any[]>([])
 
+// 文件传输相关状态
+const uploadingFiles = ref<any[]>([])
+const receivedFiles = ref<Record<string, { url: string; name: string }>>({})
+const fileTransfers = ref<Record<string, { chunks: Record<number, string>; metadata: any }>>({})
+
+// 私聊状态管理
+const currentChatType = ref<'group' | 'private'>('group')
+const currentChatTarget = ref<string>('*')
+const groupMessages = ref<any[]>([])
+const privateMessages = ref<Record<string, any[]>>({})
+
 let ws: WS
 
 onMounted(() => {
@@ -189,8 +284,38 @@ onMounted(() => {
       return
     }
 
+    // 处理文件传输消息
+    if (msg.type === 'FILE_START') {
+      handleFileStart(msg)
+    } else if (msg.type === 'FILE_CHUNK') {
+      handleFileChunk(msg)
+    } else if (msg.type === 'FILE_END') {
+      handleFileEnd(msg)
+    } else if (msg.type === 'ACK') {
+      handleAck(msg)
+    }
+
+    // 将消息路由到正确的聊天
+    if (msg.to === '*' || msg.from === props.currentUser) {
+      // 群聊消息
+      groupMessages.value.push(msg)
+    } else if (msg.to === props.currentUser) {
+      // 接收到的私聊消息
+      if (!privateMessages.value[msg.from]) {
+        privateMessages.value[msg.from] = []
+      }
+      privateMessages.value[msg.from].push(msg)
+    } else if (msg.from === props.currentUser) {
+      // 发送的私聊消息
+      if (!privateMessages.value[msg.to]) {
+        privateMessages.value[msg.to] = []
+      }
+      privateMessages.value[msg.to].push(msg)
+    }
+
+    // 保持旧的messages数组用于向后兼容
     messages.value.push(msg)
-    searchMessages() // 更新过滤后的消息
+    updateFilteredMessages()
     nextTick(() => {
       messagesRef.value?.scrollTo(0, messagesRef.value.scrollHeight)
     })
@@ -220,7 +345,7 @@ function sendMessage() {
   const msg = {
     type: "MSG_DIRECT",
     from: props.currentUser,
-    to: "test-target",
+    to: currentChatTarget.value,
     ts: Date.now(),
     payload: {
       ciphertext: inputMessage.value, // 简化：直接发明文
@@ -252,6 +377,177 @@ function handleLogout() {
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString()
+}
+
+// 文件传输相关方法
+function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files) {
+    for (const file of input.files) {
+      startFileUpload(file)
+    }
+    input.value = '' // 重置input以允许选择相同文件
+  }
+}
+
+function startFileUpload(file: File) {
+  const fileId = generateFileId()
+  const uploadInfo = {
+    id: fileId,
+    fileName: file.name,
+    totalSize: file.size,
+    progress: 0,
+    status: 'uploading',
+    statusText: 'Starting upload...',
+    file: file
+  }
+
+  uploadingFiles.value.push(uploadInfo)
+
+  // 发送FILE_START消息
+  ws.sendFile(file, currentChatTarget.value)
+}
+
+function cancelUpload(fileId: string) {
+  const index = uploadingFiles.value.findIndex(upload => upload.id === fileId)
+  if (index !== -1) {
+    uploadingFiles.value.splice(index, 1)
+  }
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+function generateFileId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+}
+
+function getFileFromId(fileId: string) {
+  const transfer = fileTransfers.value[fileId]
+  return transfer ? transfer.metadata.name : fileId
+}
+
+// 文件传输消息处理
+function handleFileStart(msg: any) {
+  const { file_id, name, size } = msg.payload
+  fileTransfers.value[file_id] = {
+    chunks: {},
+    metadata: { name, size, totalChunks: Math.ceil(size / (256 * 1024)) }
+  }
+  console.log(`[FileTransfer] Started receiving: ${name} (${size} bytes)`)
+}
+
+function handleFileChunk(msg: any) {
+  const { file_id, index, ciphertext } = msg.payload
+  if (fileTransfers.value[file_id]) {
+    fileTransfers.value[file_id].chunks[index] = ciphertext
+    console.log(`[FileTransfer] Received chunk ${index} for ${file_id}`)
+  }
+}
+
+function handleFileEnd(msg: any) {
+  const { file_id } = msg.payload
+  const transfer = fileTransfers.value[file_id]
+  if (transfer) {
+    // 重组文件
+    const chunks = transfer.chunks
+    const sortedIndices = Object.keys(chunks).map(Number).sort((a, b) => a - b)
+    const binaryData = sortedIndices.map(index => atob(chunks[index])).join('')
+
+    // 创建Blob并生成下载链接
+    const bytes = new Uint8Array(binaryData.length)
+    for (let i = 0; i < binaryData.length; i++) {
+      bytes[i] = binaryData.charCodeAt(i)
+    }
+
+    const blob = new Blob([bytes])
+    const url = URL.createObjectURL(blob)
+
+    receivedFiles.value[file_id] = {
+      url: url,
+      name: transfer.metadata.name
+    }
+
+    console.log(`[FileTransfer] Completed: ${transfer.metadata.name}`)
+  }
+}
+
+function handleAck(msg: any) {
+  // 处理ACK消息，更新上传进度
+  const msgRef = msg.payload.msg_ref
+  console.log(`[FileTransfer] ACK received for: ${msgRef}`)
+}
+
+// 私聊UI相关方法
+function selectGroupChat() {
+  currentChatType.value = 'group'
+  currentChatTarget.value = '*'
+  updateFilteredMessages()
+}
+
+function selectPrivateChat(userId: string) {
+  currentChatType.value = 'private'
+  currentChatTarget.value = userId
+
+  // 初始化私聊消息数组如果不存在
+  if (!privateMessages.value[userId]) {
+    privateMessages.value[userId] = []
+  }
+
+  updateFilteredMessages()
+}
+
+function updateFilteredMessages() {
+  if (currentChatType.value === 'group') {
+    filteredMessages.value = groupMessages.value
+  } else {
+    filteredMessages.value = privateMessages.value[currentChatTarget.value] || []
+  }
+
+  // 应用搜索过滤
+  if (searchTerm.value) {
+    searchMessages()
+  }
+}
+
+function getInputPlaceholder() {
+  if (currentChatType.value === 'group') {
+    return 'Message #general'
+  } else {
+    const user = onlineUsers.value.find(u => u.id === currentChatTarget.value)
+    return `Message @${user?.name || currentChatTarget.value}`
+  }
+}
+
+function getLastGroupMessage() {
+  const lastMsg = groupMessages.value[groupMessages.value.length - 1]
+  if (!lastMsg) return 'No messages yet'
+
+  if (lastMsg.type === 'MSG_DIRECT') {
+    return `${lastMsg.from}: ${lastMsg.payload.ciphertext.substring(0, 30)}...`
+  }
+  return `${lastMsg.type}`
+}
+
+function getLastPrivateMessage(userId: string) {
+  const msgs = privateMessages.value[userId]
+  if (!msgs || msgs.length === 0) return 'No messages yet'
+
+  const lastMsg = msgs[msgs.length - 1]
+  if (lastMsg.type === 'MSG_DIRECT') {
+    return lastMsg.payload.ciphertext.substring(0, 30) + '...'
+  }
+  return lastMsg.type
+}
+
+function getUnreadCount(target: string) {
+  // 简化实现：总是返回0，实际实现需要跟踪已读状态
+  return 0
 }
 
 function getMessageType(msg: any) {
@@ -911,5 +1207,265 @@ function getAvatarClass(from: string) {
   .username-display {
     display: none;
   }
+}
+
+/* 文件传输样式 */
+.file-upload-area {
+  background-color: #2f3136;
+  border-top: 1px solid #40444b;
+  padding: 12px 16px;
+  margin: 0;
+}
+
+.upload-item {
+  background-color: #40444b;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.upload-name {
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.upload-size {
+  color: #b9bbbe;
+  font-size: 12px;
+}
+
+.cancel-btn {
+  background: #ed4245;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  background: #c23616;
+}
+
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background-color: #4f545c;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #5865f2;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #b9bbbe;
+  min-width: 40px;
+  text-align: right;
+}
+
+.upload-status {
+  font-size: 12px;
+  color: #b9bbbe;
+}
+
+.upload-status.uploading {
+  color: #faa61a;
+}
+
+.upload-status.completed {
+  color: #3ba55d;
+}
+
+.upload-status.error {
+  color: #ed4245;
+}
+
+.file-btn {
+  background: transparent;
+  border: none;
+  color: #b9bbbe;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  margin-right: 8px;
+}
+
+.file-btn:hover {
+  background-color: #4f545c;
+  color: #dcddde;
+}
+
+.file-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.file-msg {
+  color: #3ba55d;
+  font-style: italic;
+  padding: 8px;
+  background-color: rgba(59, 165, 93, 0.1);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.download-link {
+  color: #00b0f4;
+  text-decoration: none;
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.download-link:hover {
+  text-decoration: underline;
+}
+
+/* 聊天列表样式 */
+.chat-list {
+  width: 240px;
+  background-color: #2f3136;
+  border-right: 1px solid #202225;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-list-header {
+  padding: 16px;
+  border-bottom: 1px solid #40444b;
+}
+
+.chat-list-header h3 {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.chat-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-item:hover {
+  background-color: #40444b;
+}
+
+.chat-item.active {
+  background-color: #5865f2;
+}
+
+.chat-item.active:hover {
+  background-color: #4752c4;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.group-avatar {
+  background-color: #5865f2;
+  color: white;
+}
+
+.user-avatar {
+  background-color: #747f8d;
+  color: white;
+  position: relative;
+}
+
+.user-avatar.online::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background-color: #3ba55d;
+  border: 2px solid #2f3136;
+  border-radius: 50%;
+}
+
+.chat-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-name {
+  font-weight: 500;
+  color: #ffffff;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.chat-preview {
+  font-size: 12px;
+  color: #b9bbbe;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unread-badge {
+  background-color: #ed4245;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 </style>

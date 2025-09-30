@@ -28,6 +28,7 @@ public class ChatServer extends WebSocketServer {
     private final Map<String, WebSocket> clients = new ConcurrentHashMap<>();
     private final Map<String, UserInfo> connectedUsers = new ConcurrentHashMap<>();
     private final DhtService dhtService;
+    private final FileTransferManager fileTransferManager;
 
     static class Rate { long windowStartMs = System.currentTimeMillis(); int count = 0; }
     static class UserInfo {
@@ -62,7 +63,7 @@ public class ChatServer extends WebSocketServer {
 
         // 初始化DHT服务
         try {
-            MessageParser parser = new MessageParser("socp.json");
+            MessageParser.MessageParser parser = new MessageParser.MessageParser("socp.json");
             this.dhtService = new DhtService(
                 "server",
                 new InetSocketAddress("127.0.0.1", port),
@@ -74,6 +75,9 @@ public class ChatServer extends WebSocketServer {
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize DHT service", e);
         }
+
+        // 初始化文件传输管理器
+        this.fileTransferManager = new FileTransferManager();
     }
 
     @Override public void onStart() { System.out.println("[WS] started on " + getAddress()); }
@@ -162,10 +166,44 @@ public class ChatServer extends WebSocketServer {
                 return;
             }
 
+            // 处理文件传输消息
+            if ("FILE_START".equals(type) || "FILE_CHUNK".equals(type) || "FILE_END".equals(type)) {
+                String to = json.optString("to");
+                String result = handleFileTransferMessage(json, type);
+                if (result != null) {
+                    conn.send(errorJson("file_transfer_error: " + result));
+                    return;
+                } else {
+                    // 发送ACK确认
+                    JSONObject ack = new JSONObject();
+                    ack.put("type", "ACK");
+                    ack.put("from", "server");
+                    ack.put("to", from);
+                    ack.put("ts", System.currentTimeMillis() / 1000);
+                    ack.put("nonce", "ack-" + System.currentTimeMillis());
+                    JSONObject ackPayload = new JSONObject();
+                    ackPayload.put("msg_ref", json.optString("nonce"));
+                    ackPayload.put("status", "ok");
+                    ack.put("payload", ackPayload);
+                    ack.put("sig", "server-sig");
+                    conn.send(ack.toString());
+
+                    // 如果是点对点文件传输，也转发给目标用户
+                    if (to != null && !to.equals("server") && !to.equals("*")) {
+                        WebSocket targetConn = clients.get(to);
+                        if (targetConn != null && targetConn.isOpen()) {
+                            targetConn.send(json.toString());
+                        }
+                    }
+                    return;
+                }
+            }
+
             // 更新用户活动状态
             if (from != null && connectedUsers.containsKey(from)) {
                 String activity = "HEARTBEAT".equals(type) ? "Online" :
-                                "MSG_DIRECT".equals(type) ? "Typing..." : "Active";
+                                "MSG_DIRECT".equals(type) ? "Typing..." :
+                                type.startsWith("FILE_") ? "Transferring file..." : "Active";
                 connectedUsers.get(from).updateActivity(activity);
             }
 
@@ -234,6 +272,51 @@ public class ChatServer extends WebSocketServer {
         response.put("payload", payload);
         response.put("sig", "server-sig");
         return response;
+    }
+
+    // 处理文件传输消息
+    private String handleFileTransferMessage(JSONObject json, String type) {
+        try {
+            JSONObject payload = json.getJSONObject("payload");
+
+            switch (type) {
+                case "FILE_START":
+                    String fileId = payload.getString("file_id");
+                    String fileName = payload.getString("name");
+                    long size = payload.getLong("size");
+                    String sha256 = payload.optString("sha256", "");
+                    String mode = payload.getString("mode");
+
+                    return fileTransferManager.handleFileStart(fileId, fileName, size, sha256, mode);
+
+                case "FILE_CHUNK":
+                    fileId = payload.getString("file_id");
+                    int index = payload.getInt("index");
+                    String ciphertext = payload.getString("ciphertext");
+
+                    return fileTransferManager.handleFileChunk(fileId, index, ciphertext);
+
+                case "FILE_END":
+                    fileId = payload.getString("file_id");
+
+                    // 计算总chunks数从现有数据
+                    FileTransferManager.FileMetadata metadata = fileTransferManager.getTransferMetadata(fileId);
+                    if (metadata == null) {
+                        return "File transfer not found";
+                    }
+
+                    // 估算chunk数 (假设大多数chunk是512KB)
+                    int estimatedChunks = (int) Math.ceil((double) metadata.totalSize / (512 * 1024));
+                    if (estimatedChunks == 0) estimatedChunks = 1;
+
+                    return fileTransferManager.handleFileEnd(fileId, estimatedChunks);
+
+                default:
+                    return "Unknown file transfer message type: " + type;
+            }
+        } catch (Exception e) {
+            return "Failed to process file transfer message: " + e.getMessage();
+        }
     }
 
     // DHT通信方法
