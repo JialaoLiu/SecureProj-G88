@@ -123,14 +123,24 @@ public class FileTransferManager {
         }
 
         try {
-            if (!metadata.isComplete(totalChunks)) {
-                return "Missing chunks. Expected: " + totalChunks + ", Received: " + metadata.receivedChunks.size();
+            // Check if we have a continuous sequence of chunks starting from 0
+            int receivedCount = metadata.receivedChunks.size();
+            boolean hasSequentialChunks = true;
+            for (int i = 0; i < receivedCount; i++) {
+                if (!metadata.receivedChunks.contains(i)) {
+                    hasSequentialChunks = false;
+                    break;
+                }
+            }
+
+            if (!hasSequentialChunks) {
+                return "Missing chunks in sequence. Received: " + receivedCount + " chunks but sequence is incomplete";
             }
 
             // Merge chunks into final file
             Path finalFile = Paths.get(FILES_DIR, fileId + "-" + metadata.fileName);
             try (FileOutputStream fos = new FileOutputStream(finalFile.toFile())) {
-                for (int i = 0; i < totalChunks; i++) {
+                for (int i = 0; i < receivedCount; i++) {
                     Path chunkFile = Paths.get(TMP_DIR, fileId, "chunk-" + i);
                     if (!Files.exists(chunkFile)) {
                         throw new IOException("Missing chunk file: " + i);

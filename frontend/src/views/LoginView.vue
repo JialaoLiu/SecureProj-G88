@@ -2,7 +2,7 @@
   <div class="login-container">
     <div class="login-card">
       <div class="logo-section">
-        <div class="logo">🔐</div>
+        <div class="logo">ECHO</div>
         <h1>SOCP Secure Chat</h1>
         <p>End-to-end encrypted messaging platform</p>
       </div>
@@ -78,24 +78,24 @@
           <p class="demo-text">Quick Demo Access:</p>
           <div class="demo-buttons">
             <button @click="demoLogin('alice')" class="demo-btn" :disabled="loading">
-              👩 Login as Alice
+              Login as Alice
             </button>
             <button @click="demoLogin('bob')" class="demo-btn" :disabled="loading">
-              👨 Login as Bob
+              Login as Bob
             </button>
             <button @click="demoLogin('charlie')" class="demo-btn" :disabled="loading">
-              🧑 Login as Charlie
+              Login as Charlie
             </button>
           </div>
         </div>
 
         <div class="features-section">
-          <h3>🔒 Security Features</h3>
+          <h3>Security Features</h3>
           <ul>
-            <li>✅ RSA-OAEP + AES-256-GCM Encryption</li>
-            <li>✅ Digital Signatures</li>
-            <li>✅ Anti-Replay Protection</li>
-            <li>✅ DHT-based User Discovery</li>
+            <li>RSA-OAEP + AES-256-GCM Encryption</li>
+            <li>Digital Signatures</li>
+            <li>Anti-Replay Protection</li>
+            <li>DHT-based User Discovery</li>
           </ul>
         </div>
       </div>
@@ -176,7 +176,7 @@ async function demoLogin(demoUsername: string) {
 <style scoped>
 .login-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #22223b 0%, #4a4e69 100%);
+  background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -185,7 +185,7 @@ async function demoLogin(demoUsername: string) {
 }
 
 .login-card {
-  background: white;
+  background: #4a4e69;
   border-radius: 16px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -206,7 +206,7 @@ async function demoLogin(demoUsername: string) {
 }
 
 .logo-section {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #4a4e69;
   color: white;
   padding: 40px 30px 30px;
   text-align: center;
@@ -231,11 +231,53 @@ async function demoLogin(demoUsername: string) {
 
 .form-section {
   padding: 30px;
+  background: #4a4e69;
+  color: #ffffff;
+}
+
+.form-section label {
+  color: #ffffff;
+}
+
+.form-section .demo-text {
+  color: #ffffff;
+}
+
+.form-section h3 {
+  color: #ffffff;
+}
+
+.form-section li {
+  color: #ffffff;
+}
+
+.form-section * {
+  color: #ffffff !important;
+}
+
+.form-section input {
+  background-color: #1a2332 !important;
+  border-color: #2d3748 !important;
+  color: #ffffff !important;
+}
+
+.form-section input::placeholder {
+  color: #a0aec0 !important;
+}
+
+.tab.active {
+  background: #4a4e69 !important;
+  color: #ffffff !important;
+}
+
+.demo-btn {
+  background: #4a4e69 !important;
+  color: #ffffff !important;
 }
 
 .tab-switches {
   display: flex;
-  background: #f8f9fa;
+  background: #1a2332;
   border-radius: 8px;
   padding: 4px;
   margin-bottom: 24px;
@@ -283,7 +325,7 @@ async function demoLogin(demoUsername: string) {
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #243b55;
 }
 
 .form-group input:disabled {
@@ -303,7 +345,7 @@ async function demoLogin(demoUsername: string) {
 
 .submit-btn {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
   color: white;
   border: none;
   padding: 14px;

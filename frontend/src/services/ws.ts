@@ -3,9 +3,14 @@ export class WS {
   private url: string;
   private timer?: number;
   private reconnectTimer?: number;
+  private currentUser: string = 'frontend-dev';
 
   constructor(url: string) {
     this.url = url;
+  }
+
+  setUser(username: string) {
+    this.currentUser = username;
   }
 
   private generateNonce(): string {
@@ -23,11 +28,11 @@ export class WS {
       // 最小 USER_HELLO（sig 用占位，后续由 B 同学签名）
       const hello = {
         type: "USER_HELLO",
-        from: "frontend-dev",
+        from: this.currentUser,
         to: "server",
-        ts: Date.now(),
+        ts: Math.floor(Date.now() / 1000),
         nonce: this.generateNonce(),
-        payload: { client: "frontend-dev", pubkey: "dev-pubkey", enc_pubkey: "dev-enc-pubkey" },
+        payload: { client: this.currentUser, pubkey: "dev-pubkey", enc_pubkey: "dev-enc-pubkey" },
         sig: "dev-mock"
       };
       this.ws?.send(JSON.stringify(hello));
@@ -54,9 +59,9 @@ export class WS {
     this.timer = setInterval(() => {
       const hb = {
         type: "HEARTBEAT",
-        from: "frontend-dev",
+        from: this.currentUser,
         to: "server",
-        ts: Date.now(),
+        ts: Math.floor(Date.now() / 1000),
         nonce: this.generateNonce(),
         payload: {},
         sig: "dev-mock"
@@ -88,9 +93,9 @@ export class WS {
     // Send FILE_START
     const fileStart = {
       type: "FILE_START",
-      from: "frontend-dev",
+      from: this.currentUser,
       to: to,
-      ts: Date.now(),
+      ts: Math.floor(Date.now() / 1000),
       nonce: this.generateNonce(),
       payload: {
         file_id: fileId,
@@ -112,13 +117,19 @@ export class WS {
 
       const arrayBuffer = await chunk.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
-      const base64Data = btoa(String.fromCharCode(...uint8Array));
+
+      // 安全的方式转换大数据，避免栈溢出
+      let binaryString = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binaryString += String.fromCharCode(uint8Array[i]);
+      }
+      const base64Data = btoa(binaryString);
 
       const fileChunk = {
         type: "FILE_CHUNK",
-        from: "frontend-dev",
+        from: this.currentUser,
         to: to,
-        ts: Date.now(),
+        ts: Math.floor(Date.now() / 1000),
         nonce: this.generateNonce(),
         payload: {
           file_id: fileId,
@@ -130,18 +141,18 @@ export class WS {
 
       this.send(fileChunk);
 
-      // Rate limiting: delay between chunks (100ms = 10 chunks/second)
+      // Rate limiting: delay between chunks (200ms = 5 chunks/second)
       if (i < totalChunks - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
     // Send FILE_END
     const fileEnd = {
       type: "FILE_END",
-      from: "frontend-dev",
+      from: this.currentUser,
       to: to,
-      ts: Date.now(),
+      ts: Math.floor(Date.now() / 1000),
       nonce: this.generateNonce(),
       payload: {
         file_id: fileId

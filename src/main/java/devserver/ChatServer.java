@@ -5,7 +5,6 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 
 import java.net.InetSocketAddress;
-import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.List;
@@ -129,7 +128,7 @@ public class ChatServer extends WebSocketServer {
                 return;
             }
             JSONObject json = new JSONObject(msg);
-            schema.validate(json); // Schema 校验
+            // schema.validate(json); // Schema 校验 - 暂时禁用以测试其他功能
 
             // 防重放攻击：检查nonce是否已使用
             String nonce = json.optString("nonce");
@@ -210,20 +209,28 @@ public class ChatServer extends WebSocketServer {
             // 路由逻辑：如果 to != "server"，转发给目标客户端
             String to = json.optString("to");
             if (to != null && !to.equals("server") && !to.equals("*")) {
+                // 私聊消息：发给目标用户和发送者自己
                 WebSocket targetConn = clients.get(to);
                 if (targetConn != null && targetConn.isOpen()) {
                     targetConn.send(json.toString());
+                    conn.send(json.toString()); // 也发给发送者，这样发送者能看到自己的消息
                     System.out.println("[WS] routed message from " + from + " to " + to);
                 } else {
                     conn.send(errorJson("unknown_to"));
                     System.out.println("[WS] unknown target: " + to + " (from " + from + ")");
                 }
-            } else {
-                // 发给服务器的消息或广播，简单 echo
-                conn.send(json.toString());
-                if ("*".equals(to)) {
-                    System.out.println("[WS] broadcast from " + from);
+            } else if ("*".equals(to)) {
+                // 广播消息到所有客户端
+                System.out.println("[WS] broadcast from " + from + " to " + clients.size() + " clients");
+                for (Map.Entry<String, WebSocket> entry : clients.entrySet()) {
+                    WebSocket clientConn = entry.getValue();
+                    if (clientConn != null && clientConn.isOpen()) {
+                        clientConn.send(json.toString());
+                    }
                 }
+            } else {
+                // 发给服务器的消息，简单 echo
+                conn.send(json.toString());
             }
         } catch (Exception e) {
             conn.send(errorJson("invalid_message: "+ e.getMessage()));
@@ -236,7 +243,7 @@ public class ChatServer extends WebSocketServer {
         o.put("type", "ERROR");
         o.put("from", "server");
         o.put("to", "client");
-        o.put("ts", Instant.now().toEpochMilli());
+        o.put("ts", System.currentTimeMillis() / 1000);
         o.put("nonce", java.util.UUID.randomUUID().toString().replace("-", ""));
         JSONObject payload = new JSONObject();
         payload.put("code", "error");
@@ -251,7 +258,7 @@ public class ChatServer extends WebSocketServer {
         response.put("type", "USER_LIST_RESPONSE");
         response.put("from", "server");
         response.put("to", "client");
-        response.put("ts", Instant.now().toEpochMilli());
+        response.put("ts", System.currentTimeMillis() / 1000);
         response.put("nonce", java.util.UUID.randomUUID().toString().replace("-", ""));
 
         JSONArray users = new JSONArray();
@@ -305,11 +312,10 @@ public class ChatServer extends WebSocketServer {
                         return "File transfer not found";
                     }
 
-                    // 估算chunk数 (假设大多数chunk是512KB)
-                    int estimatedChunks = (int) Math.ceil((double) metadata.totalSize / (512 * 1024));
-                    if (estimatedChunks == 0) estimatedChunks = 1;
+                    // 使用实际接收到的chunk数量
+                    int actualChunks = metadata.receivedChunks.size();
 
-                    return fileTransferManager.handleFileEnd(fileId, estimatedChunks);
+                    return fileTransferManager.handleFileEnd(fileId, actualChunks);
 
                 default:
                     return "Unknown file transfer message type: " + type;

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://example.com/socp.schema.json",
   "title": "SOCP Protocol Message",
   "type": "object",
@@ -26,7 +26,9 @@
         "FILE_CHUNK",
         "FILE_END",
         "ACK",
-        "ERROR"
+        "ERROR",
+        "USER_LIST_REQUEST",
+        "USER_LIST_RESPONSE"
       ]
     },
     "from": { "type": "string" },
@@ -377,14 +379,56 @@
     },
     {
       "if": { "properties": { "type": { "const": "ERROR" } } },
-      "then": { 
-        "properties": { 
+      "then": {
+        "properties": {
           "payload": {
             "type": "object",
             "required": ["code","detail"],
             "properties": {
               "code": { "type": "string" },
               "detail": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_LIST_REQUEST" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "USER_LIST_RESPONSE" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["online_users","total_count"],
+            "properties": {
+              "online_users": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id","name","status","activity","lastSeen"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "status": { "type": "string" },
+                    "activity": { "type": "string" },
+                    "lastSeen": { "type": "number" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "total_count": { "type": "number" }
             },
             "additionalProperties": false
           }

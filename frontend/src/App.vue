@@ -13,18 +13,27 @@ import ChatView from './views/ChatView.vue'
 const isLoggedIn = ref(false)
 const currentUser = ref('')
 
+// 从localStorage恢复登录状态
+const savedUser = localStorage.getItem('currentUser')
+if (savedUser) {
+  currentUser.value = savedUser
+  isLoggedIn.value = true
+}
+
 // 确保只有在有用户名时才认为已登录
 const isActuallyLoggedIn = computed(() => isLoggedIn.value && currentUser.value.trim() !== '')
 
 function handleLogin(username: string) {
   currentUser.value = username
   isLoggedIn.value = true
+  localStorage.setItem('currentUser', username)
   console.log(`User logged in: ${username}`)
 }
 
 function handleLogout() {
   currentUser.value = ''
   isLoggedIn.value = false
+  localStorage.removeItem('currentUser')
   console.log('User logged out')
 }
 </script>

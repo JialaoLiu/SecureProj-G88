@@ -75,7 +75,7 @@
           <div
             v-for="user in onlineUsers"
             :key="user.id"
-            v-show="user.id !== currentUser"
+            v-show="user.id !== props.currentUser"
             class="chat-item"
             :class="{ active: currentChatType === 'private' && currentChatTarget === user.id }"
             @click="selectPrivateChat(user.id)"
@@ -99,7 +99,7 @@
         <!-- Messages -->
         <div class="messages-wrapper" ref="messagesRef">
           <div v-if="filteredMessages.length === 0" class="empty-state">
-            <div class="empty-icon">💬</div>
+            <div class="empty-icon">CHAT</div>
             <p>{{ searchTerm ? 'No messages found' : 'Welcome to #socp-secure-chat' }}</p>
             <small v-if="!searchTerm">Start typing to send your first message</small>
           </div>
@@ -121,13 +121,13 @@
                   {{ msg.payload.ciphertext }}
                 </div>
                 <div v-else-if="msg.type === 'USER_HELLO'" class="system-msg">
-                  👋 <strong>{{ msg.payload.client }}</strong> joined the channel
+                  <strong>{{ msg.payload.client }}</strong> joined the channel
                 </div>
                 <div v-else-if="msg.type === 'HEARTBEAT'" class="system-msg">
-                  💓 Heartbeat
+                  Heartbeat
                 </div>
                 <div v-else-if="msg.type === 'ERROR'" class="error-msg">
-                  ⚠️ {{ msg.payload.detail }}
+                  ERROR: {{ msg.payload.detail }}
                 </div>
                 <div v-else-if="msg.type === 'FILE_START'" class="file-msg">
                   File transfer started: {{ msg.payload.name }} ({{ formatFileSize(msg.payload.size) }})
@@ -275,14 +275,19 @@ let ws: WS
 
 onMounted(() => {
   ws = new WS(wsUrl)
+  ws.setUser(props.currentUser)
 
   ws.connect((msg) => {
     // 处理在线用户列表响应
     if (msg.type === 'USER_LIST_RESPONSE' && msg.payload && msg.payload.online_users) {
       onlineUsers.value = msg.payload.online_users
       console.log('[WS] Updated online users:', onlineUsers.value)
+      console.log('[WS] Online users count:', onlineUsers.value.length)
       return
     }
+
+    // 添加调试：记录所有消息类型
+    console.log('[WS] Received message type:', msg.type)
 
     // 处理文件传输消息
     if (msg.type === 'FILE_START') {
@@ -296,8 +301,8 @@ onMounted(() => {
     }
 
     // 将消息路由到正确的聊天
-    if (msg.to === '*' || msg.from === props.currentUser) {
-      // 群聊消息
+    if (msg.to === '*') {
+      // 群聊消息 - 所有发送到"*"的消息都是群聊
       groupMessages.value.push(msg)
     } else if (msg.to === props.currentUser) {
       // 接收到的私聊消息
@@ -305,12 +310,15 @@ onMounted(() => {
         privateMessages.value[msg.from] = []
       }
       privateMessages.value[msg.from].push(msg)
-    } else if (msg.from === props.currentUser) {
-      // 发送的私聊消息
+    } else if (msg.from === props.currentUser && msg.to !== '*' && msg.to !== 'server') {
+      // 发送的私聊消息（排除群聊和服务器消息）
       if (!privateMessages.value[msg.to]) {
         privateMessages.value[msg.to] = []
       }
       privateMessages.value[msg.to].push(msg)
+    } else if (msg.from === props.currentUser || msg.to === props.currentUser || msg.type === 'USER_HELLO' || msg.type === 'HEARTBEAT' || msg.type === 'ERROR') {
+      // 其他与当前用户相关的消息，或系统消息，都显示在群聊中
+      groupMessages.value.push(msg)
     }
 
     // 保持旧的messages数组用于向后兼容
@@ -346,7 +354,7 @@ function sendMessage() {
     type: "MSG_DIRECT",
     from: props.currentUser,
     to: currentChatTarget.value,
-    ts: Date.now(),
+    ts: Math.floor(Date.now() / 1000),
     payload: {
       ciphertext: inputMessage.value, // 简化：直接发明文
       sender_pub: `${props.currentUser}-pubkey`,
@@ -364,7 +372,7 @@ function sendHeartbeat() {
     type: "HEARTBEAT",
     from: props.currentUser,
     to: "server",
-    ts: Date.now(),
+    ts: Math.floor(Date.now() / 1000),
     payload: {},
     sig: "dev-mock"
   }
@@ -376,7 +384,8 @@ function handleLogout() {
 }
 
 function formatTime(ts: number) {
-  return new Date(ts).toLocaleTimeString()
+  // 转换秒为毫秒，然后格式化为本地时间
+  return new Date(ts * 1000).toLocaleTimeString()
 }
 
 // 文件传输相关方法
@@ -452,6 +461,30 @@ function handleFileChunk(msg: any) {
 
 function handleFileEnd(msg: any) {
   const { file_id } = msg.payload
+
+  // 检查是否是我们正在上传的文件
+  const uploadIndex = uploadingFiles.value.findIndex(upload =>
+    upload.fileName === getFileFromId(file_id) ||
+    msg.from === props.currentUser
+  )
+
+  if (uploadIndex !== -1 && msg.from === props.currentUser) {
+    // 这是我们上传的文件完成了
+    const upload = uploadingFiles.value[uploadIndex]
+    upload.progress = 100
+    upload.status = 'completed'
+    upload.statusText = 'Upload completed!'
+
+    // 3秒后移除进度条
+    setTimeout(() => {
+      uploadingFiles.value.splice(uploadIndex, 1)
+    }, 3000)
+
+    console.log(`[FileTransfer] Upload completed: ${upload.fileName}`)
+    return
+  }
+
+  // 处理接收到的文件
   const transfer = fileTransfers.value[file_id]
   if (transfer) {
     // 重组文件
@@ -473,7 +506,7 @@ function handleFileEnd(msg: any) {
       name: transfer.metadata.name
     }
 
-    console.log(`[FileTransfer] Completed: ${transfer.metadata.name}`)
+    console.log(`[FileTransfer] Download ready: ${transfer.metadata.name}`)
   }
 }
 
@@ -481,6 +514,15 @@ function handleAck(msg: any) {
   // 处理ACK消息，更新上传进度
   const msgRef = msg.payload.msg_ref
   console.log(`[FileTransfer] ACK received for: ${msgRef}`)
+
+  // 查找对应的上传项并更新进度
+  for (let upload of uploadingFiles.value) {
+    if (upload.status === 'uploading') {
+      upload.progress = Math.min(upload.progress + 20, 90) // 渐进式增加进度
+      upload.statusText = `Uploading... ${upload.progress.toFixed(0)}%`
+      break
+    }
+  }
 }
 
 // 私聊UI相关方法
@@ -559,12 +601,12 @@ function getMessageType(msg: any) {
 
 function getDisplayType(type: string) {
   const typeMap: Record<string, string> = {
-    'MSG_DIRECT': '💬 Message',
-    'HEARTBEAT': '💓 Heartbeat',
-    'USER_HELLO': '👋 Join',
-    'ERROR': '⚠️ Error',
-    'SERVER_WELCOME': '🎉 Welcome',
-    'USER_ADVERTISE': '📢 User Update'
+    'MSG_DIRECT': 'Message',
+    'HEARTBEAT': 'Heartbeat',
+    'USER_HELLO': 'Join',
+    'ERROR': 'Error',
+    'SERVER_WELCOME': 'Welcome',
+    'USER_ADVERTISE': 'User Update'
   }
   return typeMap[type] || type
 }
@@ -588,7 +630,8 @@ function requestOnlineUsers() {
     type: "USER_LIST_REQUEST",
     from: props.currentUser,
     to: "server",
-    ts: Date.now(),
+    ts: Math.floor(Date.now() / 1000),
+    nonce: Date.now().toString(),
     payload: {},
     sig: "dev-mock"
   }
