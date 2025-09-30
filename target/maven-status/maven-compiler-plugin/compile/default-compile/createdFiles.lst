@@ -1,10 +1,7 @@
-devserver/ChatServer$Rate.class
+devserver/FileTransferManager$1.class
 crypto/nonceWh.class
 crypto/NonceCreator.class
-socp/MessageParser.class
-socp/MessageTypes.class
-crypto/SOCPCryptoService.class
-crypto/SOCPCryptoDemo.class
+socp/dht/RoutingTable.class
 crypto/RsaOaep.class
 crypto/AesGcm.class
 crypto/CryptoPorts.class
@@ -15,9 +12,7 @@ crypto/Header.class
 crypto/HeaderUtil.class
 crypto/RSAkeypair.class
 crypto/RsaSign.class
-socp/Message.class
-socp/Main.class
-crypto/SOCPCryptoService$DecryptedMessage.class
+devserver/FileTransferManager.class
 crypto/NullCrypto.class
-devserver/ChatServer.class
-crypto/CryptoDemo.class
+socp/dht/KademliaNode.class
+devserver/FileTransferManager$FileMetadata.class
