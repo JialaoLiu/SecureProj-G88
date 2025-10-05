@@ -35,7 +35,8 @@ export class WS {
         payload: { client: this.currentUser, pubkey: "dev-pubkey", enc_pubkey: "dev-enc-pubkey" },
         sig: "dev-mock"
       };
-      this.ws?.send(JSON.stringify(hello));
+      // Send USER_HELLO immediately when connection opens
+      this.ws!.send(JSON.stringify(hello));
       this.heartbeat();
     };
 
@@ -66,7 +67,7 @@ export class WS {
         payload: {},
         sig: "dev-mock"
       };
-      this.ws?.send(JSON.stringify(hb));
+      this.send(hb);
     }, 25000) as unknown as number;
   }
 
@@ -75,11 +76,17 @@ export class WS {
   }
 
   send(obj: any) {
+    // Check if WebSocket is ready before sending
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WS] Cannot send message: WebSocket not ready, state:', this.ws?.readyState);
+      return;
+    }
+
     // Add nonce if not already present
     if (!obj.nonce) {
       obj.nonce = this.generateNonce();
     }
-    this.ws?.send(JSON.stringify(obj));
+    this.ws.send(JSON.stringify(obj));
   }
 
   async sendFile(file: File, to: string) {

@@ -8,6 +8,13 @@
         <div class="connection-status">
           <span :class="['status-dot', connected ? 'online' : 'offline']"></span>
           <span class="status-text">{{ connected ? 'Connected' : 'Disconnected' }}</span>
+          <button
+            @click="toggleProtocol"
+            :class="['protocol-toggle', wsUrl.startsWith('wss://') ? 'wss-secure' : 'ws-insecure']"
+            :title="`Click to switch to ${wsUrl.startsWith('wss://') ? 'WS' : 'WSS'}`"
+          >
+            {{ wsUrl.startsWith('wss://') ? '🔒 WSS' : '🔓 WS' }}
+          </button>
         </div>
       </div>
 
@@ -75,7 +82,7 @@
           <div
             v-for="user in onlineUsers"
             :key="user.id"
-            v-show="user.id !== props.currentUser"
+            v-show="user.id !== currentUser"
             class="chat-item"
             :class="{ active: currentChatType === 'private' && currentChatTarget === user.id }"
             @click="selectPrivateChat(user.id)"
@@ -99,7 +106,7 @@
         <!-- Messages -->
         <div class="messages-wrapper" ref="messagesRef">
           <div v-if="filteredMessages.length === 0" class="empty-state">
-            <div class="empty-icon">CHAT</div>
+            <div class="empty-icon">💬</div>
             <p>{{ searchTerm ? 'No messages found' : 'Welcome to #socp-secure-chat' }}</p>
             <small v-if="!searchTerm">Start typing to send your first message</small>
           </div>
@@ -121,13 +128,13 @@
                   {{ msg.payload.ciphertext }}
                 </div>
                 <div v-else-if="msg.type === 'USER_HELLO'" class="system-msg">
-                  <strong>{{ msg.payload.client }}</strong> joined the channel
+                  👋 <strong>{{ msg.payload.client }}</strong> joined the channel
                 </div>
                 <div v-else-if="msg.type === 'HEARTBEAT'" class="system-msg">
-                  Heartbeat
+                  💓 Heartbeat
                 </div>
                 <div v-else-if="msg.type === 'ERROR'" class="error-msg">
-                  ERROR: {{ msg.payload.detail }}
+                  ⚠️ {{ msg.payload.detail }}
                 </div>
                 <div v-else-if="msg.type === 'FILE_START'" class="file-msg">
                   File transfer started: {{ msg.payload.name }} ({{ formatFileSize(msg.payload.size) }})
@@ -250,7 +257,7 @@ const connected = ref(false)
 const messages = ref<any[]>([])
 const inputMessage = ref('')
 const messagesRef = ref<HTMLElement>()
-const wsUrl = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8080'
+const wsUrl = ref(import.meta.env.VITE_WS_URL || 'wss://localhost:9443')
 
 // Discord-style features
 const showMembers = ref(true)
@@ -273,21 +280,36 @@ const privateMessages = ref<Record<string, any[]>>({})
 
 let ws: WS
 
-onMounted(() => {
-  ws = new WS(wsUrl)
-  ws.setUser(props.currentUser)
+// Protocol toggle function
+function toggleProtocol() {
+  if (wsUrl.value.startsWith('wss://')) {
+    // Switch from WSS (port 9443) to WS (port 9080)
+    wsUrl.value = 'ws://localhost:9080'
+  } else {
+    // Switch from WS (port 9080) to WSS (port 9443)
+    wsUrl.value = 'wss://localhost:9443'
+  }
+
+  console.log('[Protocol] Switching to:', wsUrl.value)
+
+  // Reconnect with new protocol
+  connectWebSocket()
+}
+
+function connectWebSocket() {
+  if (ws) {
+    ws.disconnect()
+  }
+
+  ws = new WS(wsUrl.value)
 
   ws.connect((msg) => {
     // 处理在线用户列表响应
     if (msg.type === 'USER_LIST_RESPONSE' && msg.payload && msg.payload.online_users) {
       onlineUsers.value = msg.payload.online_users
       console.log('[WS] Updated online users:', onlineUsers.value)
-      console.log('[WS] Online users count:', onlineUsers.value.length)
       return
     }
-
-    // 添加调试：记录所有消息类型
-    console.log('[WS] Received message type:', msg.type)
 
     // 处理文件传输消息
     if (msg.type === 'FILE_START') {
@@ -301,8 +323,8 @@ onMounted(() => {
     }
 
     // 将消息路由到正确的聊天
-    if (msg.to === '*') {
-      // 群聊消息 - 所有发送到"*"的消息都是群聊
+    if (msg.to === '*' || msg.from === props.currentUser) {
+      // 群聊消息
       groupMessages.value.push(msg)
     } else if (msg.to === props.currentUser) {
       // 接收到的私聊消息
@@ -310,15 +332,12 @@ onMounted(() => {
         privateMessages.value[msg.from] = []
       }
       privateMessages.value[msg.from].push(msg)
-    } else if (msg.from === props.currentUser && msg.to !== '*' && msg.to !== 'server') {
-      // 发送的私聊消息（排除群聊和服务器消息）
+    } else if (msg.from === props.currentUser) {
+      // 发送的私聊消息
       if (!privateMessages.value[msg.to]) {
         privateMessages.value[msg.to] = []
       }
       privateMessages.value[msg.to].push(msg)
-    } else if (msg.from === props.currentUser || msg.to === props.currentUser || msg.type === 'USER_HELLO' || msg.type === 'HEARTBEAT' || msg.type === 'ERROR') {
-      // 其他与当前用户相关的消息，或系统消息，都显示在群聊中
-      groupMessages.value.push(msg)
     }
 
     // 保持旧的messages数组用于向后兼容
@@ -335,6 +354,10 @@ onMounted(() => {
     // 连接成功后请求在线用户列表
     requestOnlineUsers()
   }, 1000)
+}
+
+onMounted(() => {
+  connectWebSocket()
 
   // 初始化过滤消息
   filteredMessages.value = messages.value
@@ -354,7 +377,7 @@ function sendMessage() {
     type: "MSG_DIRECT",
     from: props.currentUser,
     to: currentChatTarget.value,
-    ts: Math.floor(Date.now() / 1000),
+    ts: Date.now(),
     payload: {
       ciphertext: inputMessage.value, // 简化：直接发明文
       sender_pub: `${props.currentUser}-pubkey`,
@@ -372,7 +395,7 @@ function sendHeartbeat() {
     type: "HEARTBEAT",
     from: props.currentUser,
     to: "server",
-    ts: Math.floor(Date.now() / 1000),
+    ts: Date.now(),
     payload: {},
     sig: "dev-mock"
   }
@@ -384,8 +407,7 @@ function handleLogout() {
 }
 
 function formatTime(ts: number) {
-  // 转换秒为毫秒，然后格式化为本地时间
-  return new Date(ts * 1000).toLocaleTimeString()
+  return new Date(ts).toLocaleTimeString()
 }
 
 // 文件传输相关方法
@@ -461,30 +483,6 @@ function handleFileChunk(msg: any) {
 
 function handleFileEnd(msg: any) {
   const { file_id } = msg.payload
-
-  // 检查是否是我们正在上传的文件
-  const uploadIndex = uploadingFiles.value.findIndex(upload =>
-    upload.fileName === getFileFromId(file_id) ||
-    msg.from === props.currentUser
-  )
-
-  if (uploadIndex !== -1 && msg.from === props.currentUser) {
-    // 这是我们上传的文件完成了
-    const upload = uploadingFiles.value[uploadIndex]
-    upload.progress = 100
-    upload.status = 'completed'
-    upload.statusText = 'Upload completed!'
-
-    // 3秒后移除进度条
-    setTimeout(() => {
-      uploadingFiles.value.splice(uploadIndex, 1)
-    }, 3000)
-
-    console.log(`[FileTransfer] Upload completed: ${upload.fileName}`)
-    return
-  }
-
-  // 处理接收到的文件
   const transfer = fileTransfers.value[file_id]
   if (transfer) {
     // 重组文件
@@ -506,7 +504,7 @@ function handleFileEnd(msg: any) {
       name: transfer.metadata.name
     }
 
-    console.log(`[FileTransfer] Download ready: ${transfer.metadata.name}`)
+    console.log(`[FileTransfer] Completed: ${transfer.metadata.name}`)
   }
 }
 
@@ -514,15 +512,6 @@ function handleAck(msg: any) {
   // 处理ACK消息，更新上传进度
   const msgRef = msg.payload.msg_ref
   console.log(`[FileTransfer] ACK received for: ${msgRef}`)
-
-  // 查找对应的上传项并更新进度
-  for (let upload of uploadingFiles.value) {
-    if (upload.status === 'uploading') {
-      upload.progress = Math.min(upload.progress + 20, 90) // 渐进式增加进度
-      upload.statusText = `Uploading... ${upload.progress.toFixed(0)}%`
-      break
-    }
-  }
 }
 
 // 私聊UI相关方法
@@ -601,12 +590,12 @@ function getMessageType(msg: any) {
 
 function getDisplayType(type: string) {
   const typeMap: Record<string, string> = {
-    'MSG_DIRECT': 'Message',
-    'HEARTBEAT': 'Heartbeat',
-    'USER_HELLO': 'Join',
-    'ERROR': 'Error',
-    'SERVER_WELCOME': 'Welcome',
-    'USER_ADVERTISE': 'User Update'
+    'MSG_DIRECT': '💬 Message',
+    'HEARTBEAT': '💓 Heartbeat',
+    'USER_HELLO': '👋 Join',
+    'ERROR': '⚠️ Error',
+    'SERVER_WELCOME': '🎉 Welcome',
+    'USER_ADVERTISE': '📢 User Update'
   }
   return typeMap[type] || type
 }
@@ -630,8 +619,7 @@ function requestOnlineUsers() {
     type: "USER_LIST_REQUEST",
     from: props.currentUser,
     to: "server",
-    ts: Math.floor(Date.now() / 1000),
-    nonce: Date.now().toString(),
+    ts: Date.now(),
     payload: {},
     sig: "dev-mock"
   }
@@ -676,7 +664,6 @@ function getAvatarInitial(name: string) {
 
 function getAvatarClass(from: string) {
   // 根据用户名生成不同颜色
-  if (!from) return 'blue' // 默认颜色
   const colors = ['red', 'blue', 'green', 'purple', 'orange', 'pink']
   const hash = from.split('').reduce((a, b) => {
     a = ((a << 5) - a) + b.charCodeAt(0)
@@ -748,6 +735,47 @@ function getAvatarClass(from: string) {
   color: #b9bbbe;
 }
 
+/* Protocol Toggle Button Styles */
+.protocol-toggle {
+  background: none;
+  border: 2px solid #ddd;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-left: 8px;
+  outline: none;
+}
+
+.protocol-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.wss-secure {
+  background: linear-gradient(135deg, #3ba55d, #2d8a47);
+  color: white;
+  border-color: #3ba55d;
+}
+
+.wss-secure:hover {
+  background: linear-gradient(135deg, #2d8a47, #256f3a);
+  border-color: #2d8a47;
+}
+
+.ws-insecure {
+  background: linear-gradient(135deg, #faa61a, #e8910e);
+  color: white;
+  border-color: #faa61a;
+}
+
+.ws-insecure:hover {
+  background: linear-gradient(135deg, #e8910e, #d07c0c);
+  border-color: #e8910e;
+}
+
 .top-controls {
   display: flex;
   align-items: center;
@@ -810,6 +838,104 @@ function getAvatarClass(from: string) {
   flex: 1;
   display: flex;
   overflow: hidden;
+}
+
+/* Chat List Sidebar */
+.chat-list {
+  width: 240px;
+  background-color: #2f3136;
+  border-right: 1px solid #202225;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-list-header {
+  padding: 16px;
+  border-bottom: 1px solid #202225;
+}
+
+.chat-list-header h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8e9297;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.chat-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.chat-item:hover {
+  background-color: #40444b;
+}
+
+.chat-item.active {
+  background-color: #5865f2;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: white;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.group-avatar {
+  background-color: #4f545c;
+}
+
+.chat-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-name {
+  font-weight: 500;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.chat-preview {
+  font-size: 12px;
+  color: #b9bbbe;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unread-badge {
+  background-color: #ed4245;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
 }
 
 .chat-area {
@@ -1006,6 +1132,27 @@ function getAvatarClass(from: string) {
 .input-buttons {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.file-btn {
+  background-color: #4f545c;
+  border: none;
+  color: #dcddde;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.file-btn:hover:not(:disabled) {
+  background-color: #5865f2;
+}
+
+.file-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .send-btn {
@@ -1152,28 +1299,6 @@ function getAvatarClass(from: string) {
   text-overflow: ellipsis;
 }
 
-/* Scrollbar */
-.messages-wrapper::-webkit-scrollbar,
-.member-items::-webkit-scrollbar {
-  width: 8px;
-}
-
-.messages-wrapper::-webkit-scrollbar-track,
-.member-items::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messages-wrapper::-webkit-scrollbar-thumb,
-.member-items::-webkit-scrollbar-thumb {
-  background-color: #202225;
-  border-radius: 4px;
-}
-
-.messages-wrapper::-webkit-scrollbar-thumb:hover,
-.member-items::-webkit-scrollbar-thumb:hover {
-  background-color: #36393f;
-}
-
 /* User Info Styles */
 .user-info {
   display: flex;
@@ -1229,31 +1354,7 @@ function getAvatarClass(from: string) {
   color: white;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .member-list {
-    position: absolute;
-    right: 0;
-    top: 48px;
-    height: calc(100vh - 48px);
-    z-index: 10;
-    box-shadow: -2px 0 10px rgba(4, 4, 5, 0.2);
-  }
-
-  .search-input {
-    width: 140px;
-  }
-
-  .quick-actions {
-    justify-content: center;
-  }
-
-  .username-display {
-    display: none;
-  }
-}
-
-/* 文件传输样式 */
+/* File Upload Area */
 .file-upload-area {
   background-color: #2f3136;
   border-top: 1px solid #40444b;
@@ -1327,189 +1428,57 @@ function getAvatarClass(from: string) {
   text-align: right;
 }
 
-.upload-status {
-  font-size: 12px;
-  color: #b9bbbe;
+/* Scrollbar */
+.messages-wrapper::-webkit-scrollbar,
+.member-items::-webkit-scrollbar,
+.chat-items::-webkit-scrollbar {
+  width: 8px;
 }
 
-.upload-status.uploading {
-  color: #faa61a;
-}
-
-.upload-status.completed {
-  color: #3ba55d;
-}
-
-.upload-status.error {
-  color: #ed4245;
-}
-
-.file-btn {
+.messages-wrapper::-webkit-scrollbar-track,
+.member-items::-webkit-scrollbar-track,
+.chat-items::-webkit-scrollbar-track {
   background: transparent;
-  border: none;
-  color: #b9bbbe;
-  padding: 8px 12px;
+}
+
+.messages-wrapper::-webkit-scrollbar-thumb,
+.member-items::-webkit-scrollbar-thumb,
+.chat-items::-webkit-scrollbar-thumb {
+  background-color: #202225;
   border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s ease;
-  margin-right: 8px;
 }
 
-.file-btn:hover {
-  background-color: #4f545c;
-  color: #dcddde;
+.messages-wrapper::-webkit-scrollbar-thumb:hover,
+.member-items::-webkit-scrollbar-thumb:hover,
+.chat-items::-webkit-scrollbar-thumb:hover {
+  background-color: #36393f;
 }
 
-.file-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Responsive */
+@media (max-width: 768px) {
+  .member-list {
+    position: absolute;
+    right: 0;
+    top: 48px;
+    height: calc(100vh - 48px);
+    z-index: 10;
+    box-shadow: -2px 0 10px rgba(4, 4, 5, 0.2);
+  }
 
-.file-msg {
-  color: #3ba55d;
-  font-style: italic;
-  padding: 8px;
-  background-color: rgba(59, 165, 93, 0.1);
-  border-radius: 4px;
-  margin: 4px 0;
-}
+  .chat-list {
+    width: 200px;
+  }
 
-.download-link {
-  color: #00b0f4;
-  text-decoration: none;
-  margin-left: 8px;
-  font-weight: 500;
-}
+  .search-input {
+    width: 140px;
+  }
 
-.download-link:hover {
-  text-decoration: underline;
-}
+  .quick-actions {
+    justify-content: center;
+  }
 
-/* 聊天列表样式 */
-.chat-list {
-  width: 240px;
-  background-color: #2f3136;
-  border-right: 1px solid #202225;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-list-header {
-  padding: 16px;
-  border-bottom: 1px solid #40444b;
-}
-
-.chat-list-header h3 {
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.chat-items {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.chat-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  margin-bottom: 2px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.chat-item:hover {
-  background-color: #40444b;
-}
-
-.chat-item.active {
-  background-color: #5865f2;
-}
-
-.chat-item.active:hover {
-  background-color: #4752c4;
-}
-
-.chat-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.group-avatar {
-  background-color: #5865f2;
-  color: white;
-}
-
-.user-avatar {
-  background-color: #747f8d;
-  color: white;
-  position: relative;
-}
-
-.user-avatar.online::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  background-color: #3ba55d;
-  border: 2px solid #2f3136;
-  border-radius: 50%;
-}
-
-.chat-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-name {
-  font-weight: 500;
-  color: #ffffff;
-  font-size: 14px;
-  margin-bottom: 2px;
-}
-
-.chat-preview {
-  font-size: 12px;
-  color: #b9bbbe;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.unread-badge {
-  background-color: #ed4245;
-  color: white;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 8px;
-  min-width: 16px;
-  text-align: center;
-}
-
-.main-content {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-.chat-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  .username-display {
+    display: none;
+  }
 }
 </style>

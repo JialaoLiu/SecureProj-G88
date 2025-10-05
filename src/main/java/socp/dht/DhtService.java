@@ -456,7 +456,7 @@ public class DhtService {
     }
 
     private String hashKey(String key) {
-        return Integer.toHexString(key.hashCode());
+        return HashUtil.hashKey(key);
     }
 
     private KademliaNode createNodeFromPayload(Map<String, Object> payload, String idKey) {
