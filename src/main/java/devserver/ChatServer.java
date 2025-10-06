@@ -353,6 +353,9 @@ public class ChatServer extends WebSocketServer {
         int port = 8080;
         if (args != null && args.length > 0) port = Integer.parseInt(args[0]);
 
+        // Start authentication server
+        AuthServer.start();
+
         // Start file server for downloads
         FileServer.start();
 

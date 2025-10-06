@@ -105,6 +105,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { AuthService } from '../services/auth'
 
 const emit = defineEmits<{
   login: [username: string]
@@ -144,16 +145,25 @@ async function handleSubmit() {
   loading.value = true
 
   try {
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    // 简单验证：任何用户名+密码组合都能登录
-    console.log(`${isLogin.value ? 'Login' : 'Register'} successful for:`, username.value)
-
-    // 发射登录事件
-    emit('login', username.value.trim())
-  } catch (err) {
-    error.value = 'Authentication failed. Please try again.'
+    if (isLogin.value) {
+      // Login with JWT
+      const response = await AuthService.login({
+        username: username.value.trim(),
+        password: password.value
+      })
+      console.log('Login successful:', response.username)
+      emit('login', response.username)
+    } else {
+      // Register with JWT
+      const response = await AuthService.register({
+        username: username.value.trim(),
+        password: password.value
+      })
+      console.log('Registration successful:', response.username)
+      emit('login', response.username)
+    }
+  } catch (err: any) {
+    error.value = err.message || 'Authentication failed. Please try again.'
   } finally {
     loading.value = false
   }
@@ -165,8 +175,13 @@ async function demoLogin(demoUsername: string) {
   loading.value = true
 
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
-    emit('login', demoUsername)
+    const response = await AuthService.login({
+      username: demoUsername,
+      password: 'demo123'
+    })
+    emit('login', response.username)
+  } catch (err: any) {
+    error.value = err.message || 'Demo login failed'
   } finally {
     loading.value = false
   }
@@ -334,13 +349,14 @@ async function demoLogin(demoUsername: string) {
 }
 
 .error-message {
-  background: #fef2f2;
-  color: #dc2626;
+  background: #fee2e2;
+  color: #991b1b;
   padding: 12px;
   border-radius: 8px;
   font-size: 14px;
   margin-bottom: 20px;
-  border: 1px solid #fecaca;
+  border: 1px solid #dc2626;
+  font-weight: 500;
 }
 
 .submit-btn {

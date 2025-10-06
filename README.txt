@@ -1,52 +1,81 @@
 EchoChat - Distributed Secure Chat System
 Group G88
 
+QUICK START
+-----------
+1. Start backend servers:
+   mvn exec:java
+
+   This starts three servers:
+   - WebSocket server: ws://localhost:8080
+   - File server: http://localhost:8081
+   - Authentication server: http://localhost:8082
+
+2. Start frontend (in a new terminal):
+   cd frontend
+   npm install
+   npm run dev
+
+3. Open browser: http://localhost:5173
+
+4. Login with demo account:
+   Username: alice
+   Password: demo123
+
 COMPILATION
 -----------
 mvn clean compile
 
-RUNNING (Original)
-------------------
-mvn exec:java -Dexec.args="<nodeId> <port>"
+AUTHENTICATION
+--------------
+JWT-based authentication system.
 
-EXAMPLES
+Demo Accounts:
+- alice / demo123
+- bob / demo123
+- charlie / demo123
+
+You can also register new accounts.
+
+API Endpoints:
+- POST http://localhost:8082/api/auth/login      - Login with username/password
+- POST http://localhost:8082/api/auth/register   - Register new account
+- POST http://localhost:8082/api/auth/verify     - Verify JWT token
+- GET  http://localhost:8082/api/debug/users     - List all users (debug endpoint)
+
+FEATURES
 --------
-mvn exec:java -Dexec.args="alice 8080"
-mvn exec:java -Dexec.args="bob 8081"
-mvn exec:java -Dexec.args="charlie 8082"
+- JWT authentication (login/register)
+- Real-time messaging (direct & group chat)
+- User presence (online/offline)
+- File upload and download
+- Rate limiting
+- SOCP protocol with encryption support
 
-COMMANDS
---------
-connect <host:port>
-list
-msg <nodeId> <message>
-broadcast <message>
-auth <nodeId>
-sessions
-revoke <nodeId>
-status
-quit
-
-FRONTEND DEVELOPMENT SETUP
----------------------------
-1. Start backend WebSocket server:
-   mvn -q exec:java -Dexec.mainClass=devserver.ChatServer
-
-2. Start frontend development server:
-   cd frontend && npm run dev
-
-3. Open browser: http://localhost:5173
+FILE UPLOAD
+-----------
+Files stored in: ./uploads/files/
+Maximum size: 256MB
+Chunk size: 256KB
 
 TESTING
 -------
-- Page auto-connects and sends USER_HELLO
-- Input box: type message and press Enter or click "Send MSG_DIRECT"
-- "Send HEARTBEAT" button for manual heartbeat test
-- Rate limiting: send >10 messages/second to trigger ERROR response
+- Login with demo accounts
+- Open multiple browser windows for multi-user testing
+- Upload files via attachment icon
+- Test debug endpoint: http://localhost:8082/api/debug/users
 
-IMPORTANT NOTES
----------------
-- devserver.ChatServer is DEVELOPMENT STUB only (not Person C's implementation)
-- crypto.CryptoPorts are interface placeholders (for Person B's implementation)
-- All signatures use "dev-mock" placeholder (not real crypto)
-- Frontend strictly follows SOCP schema from src/main/resources/socp.json
+COMMAND LINE MODE (Original)
+-----------------------------
+mvn exec:java -Dexec.args="<nodeId> <port>"
+
+Examples:
+mvn exec:java -Dexec.args="alice 8080"
+mvn exec:java -Dexec.args="bob 8081"
+
+Commands:
+connect <host:port>
+msg <nodeId> <message>
+broadcast <message>
+list
+quit
