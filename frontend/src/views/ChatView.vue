@@ -8,6 +8,17 @@
         <div class="connection-status">
           <span :class="['status-dot', connected ? 'online' : 'offline']"></span>
           <span class="status-text">{{ connected ? 'Connected' : 'Disconnected' }}</span>
+          <div class="protocol-switcher">
+            <select v-model="selectedProtocol" @change="switchProtocol" class="protocol-select">
+              <option value="ws://localhost:8080">WS (Port 8080)</option>
+              <option value="wss://localhost:9443">WSS (Port 9443)</option>
+            </select>
+            <button @click="reconnect" class="reconnect-btn" title="Reconnect">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <path fill="currentColor" d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -120,6 +131,27 @@
                 <div v-if="msg.type === 'MSG_DIRECT'" class="direct-msg">
                   {{ msg.payload.ciphertext }}
                 </div>
+                <div v-else-if="msg.type === 'FILE_UPLOAD'" class="file-msg">
+                  <div class="file-info">
+                    <div class="file-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                        <path d="M320-240h320v-80H320v80Zm0-160h320v-80H320v80ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/>
+                      </svg>
+                    </div>
+                    <div class="file-details">
+                      <div class="file-name">{{ msg.payload.fileName }}</div>
+                      <div class="file-size">{{ formatFileSize(msg.payload.fileSize) }}</div>
+                    </div>
+                    <div class="file-actions">
+                      <a :href="getFileDownloadUrl(msg.payload.file_id, msg.payload.fileName)" :download="msg.payload.fileName" class="download-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
+                          <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>
+                        </svg>
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                </div>
                 <div v-else-if="msg.type === 'USER_HELLO'" class="system-msg">
                   <strong>{{ msg.payload.client }}</strong> joined the channel
                 </div>
@@ -203,9 +235,6 @@
             <button @click="sendHeartbeat" :disabled="!connected" class="quick-btn">
               Heartbeat
             </button>
-            <button @click="testRateLimit" :disabled="!connected" class="quick-btn">
-              Rate Test
-            </button>
             <button @click="clearMessages" class="quick-btn">
               Clear
             </button>
@@ -251,6 +280,7 @@ const messages = ref<any[]>([])
 const inputMessage = ref('')
 const messagesRef = ref<HTMLElement>()
 const wsUrl = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8080'
+const selectedProtocol = ref('ws://localhost:8080') // 默认WS协议
 
 // Discord-style features
 const showMembers = ref(true)
@@ -273,74 +303,131 @@ const privateMessages = ref<Record<string, any[]>>({})
 
 let ws: WS
 
-onMounted(() => {
-  ws = new WS(wsUrl)
+function initWebSocket() {
+  // 断开现有连接
+  if (ws) {
+    ws.disconnect()
+    connected.value = false
+  }
+
+  console.log(`[WS] Connecting to ${selectedProtocol.value}...`)
+
+  // 创建新的WebSocket连接
+  ws = new WS(selectedProtocol.value)
   ws.setUser(props.currentUser)
 
-  ws.connect((msg) => {
-    // 处理在线用户列表响应
-    if (msg.type === 'USER_LIST_RESPONSE' && msg.payload && msg.payload.online_users) {
-      onlineUsers.value = msg.payload.online_users
-      console.log('[WS] Updated online users:', onlineUsers.value)
-      console.log('[WS] Online users count:', onlineUsers.value.length)
-      return
-    }
-
-    // 添加调试：记录所有消息类型
-    console.log('[WS] Received message type:', msg.type)
-
-    // 处理文件传输消息
-    if (msg.type === 'FILE_START') {
-      handleFileStart(msg)
-    } else if (msg.type === 'FILE_CHUNK') {
-      handleFileChunk(msg)
-    } else if (msg.type === 'FILE_END') {
-      handleFileEnd(msg)
-    } else if (msg.type === 'ACK') {
-      handleAck(msg)
-    }
-
-    // 将消息路由到正确的聊天
-    if (msg.to === '*') {
-      // 群聊消息 - 所有发送到"*"的消息都是群聊
-      groupMessages.value.push(msg)
-    } else if (msg.to === props.currentUser) {
-      // 接收到的私聊消息
-      if (!privateMessages.value[msg.from]) {
-        privateMessages.value[msg.from] = []
+  // 使用更直接的连接管理
+  try {
+    ws.connect((msg) => {
+      // 如果收到第一条消息，说明连接成功
+      if (!connected.value) {
+        connected.value = true
+        console.log(`[WS] Connected using protocol: ${selectedProtocol.value}`)
+        // 连接成功后请求在线用户列表
+        requestOnlineUsers()
       }
-      privateMessages.value[msg.from].push(msg)
-    } else if (msg.from === props.currentUser && msg.to !== '*' && msg.to !== 'server') {
-      // 发送的私聊消息（排除群聊和服务器消息）
-      if (!privateMessages.value[msg.to]) {
-        privateMessages.value[msg.to] = []
-      }
-      privateMessages.value[msg.to].push(msg)
-    } else if (msg.from === props.currentUser || msg.to === props.currentUser || msg.type === 'USER_HELLO' || msg.type === 'HEARTBEAT' || msg.type === 'ERROR') {
-      // 其他与当前用户相关的消息，或系统消息，都显示在群聊中
-      groupMessages.value.push(msg)
-    }
 
-    // 保持旧的messages数组用于向后兼容
-    messages.value.push(msg)
-    updateFilteredMessages()
-    nextTick(() => {
-      messagesRef.value?.scrollTo(0, messagesRef.value.scrollHeight)
+      // 处理在线用户列表响应
+      if (msg.type === 'USER_LIST_RESPONSE' && msg.payload && msg.payload.online_users) {
+        onlineUsers.value = msg.payload.online_users
+        console.log('[WS] Updated online users:', onlineUsers.value)
+        console.log('[WS] Online users count:', onlineUsers.value.length)
+        return
+      }
+
+      // 添加调试：记录所有消息类型
+      console.log('[WS] Received message type:', msg.type)
+
+      // 处理文件传输消息
+      if (msg.type === 'FILE_START') {
+        handleFileStart(msg)
+        return // 不要将FILE_START消息添加到聊天中
+      } else if (msg.type === 'FILE_CHUNK') {
+        handleFileChunk(msg)
+        return // 不要将FILE_CHUNK消息添加到聊天中
+      } else if (msg.type === 'FILE_END') {
+        handleFileEnd(msg)
+        return // 不要将FILE_END消息添加到聊天中，handleFileEnd会创建FILE_UPLOAD消息
+      } else if (msg.type === 'ACK') {
+        handleAck(msg)
+        return // 不要将ACK消息添加到聊天中
+      } else if (msg.type === 'HEARTBEAT') {
+        // 不要将HEARTBEAT消息添加到聊天中
+        return
+      }
+
+      // 将消息路由到正确的聊天
+      if (msg.to === '*') {
+        // 群聊消息 - 所有发送到"*"的消息都是群聊
+        groupMessages.value.push(msg)
+      } else if (msg.to === props.currentUser) {
+        // 接收到的私聊消息
+        if (!privateMessages.value[msg.from]) {
+          privateMessages.value[msg.from] = []
+        }
+        privateMessages.value[msg.from].push(msg)
+      } else if (msg.from === props.currentUser && msg.to !== '*' && msg.to !== 'server') {
+        // 发送的私聊消息（排除群聊和服务器消息）
+        if (!privateMessages.value[msg.to]) {
+          privateMessages.value[msg.to] = []
+        }
+        privateMessages.value[msg.to].push(msg)
+      } else if (msg.from === props.currentUser || msg.to === props.currentUser || msg.type === 'USER_HELLO' || msg.type === 'HEARTBEAT' || msg.type === 'ERROR') {
+        // 其他与当前用户相关的消息，或系统消息，都显示在群聊中
+        groupMessages.value.push(msg)
+      }
+
+      // 保持旧的messages数组用于向后兼容
+      messages.value.push(msg)
+      updateFilteredMessages()
+      nextTick(() => {
+        messagesRef.value?.scrollTo(0, messagesRef.value.scrollHeight)
+      })
     })
-  })
 
-  // 简单连接状态检测
-  setTimeout(() => {
-    connected.value = true
-    // 连接成功后请求在线用户列表
-    requestOnlineUsers()
-  }, 1000)
+    // 监听连接失败 - 使用setTimeout检测连接超时
+    setTimeout(() => {
+      if (!connected.value) {
+        console.log(`[WS] Connection timeout for ${selectedProtocol.value}`)
+        connected.value = false
+      }
+    }, 3000) // 3秒超时
+
+  } catch (error) {
+    console.error(`[WS] Connection failed:`, error)
+    connected.value = false
+  }
 
   // 初始化过滤消息
   filteredMessages.value = messages.value
+}
 
-  // 定期更新在线用户列表
-  setInterval(requestOnlineUsers, 10000) // 每10秒更新一次
+// 协议切换函数
+function switchProtocol() {
+  console.log(`[WS] Switching to protocol: ${selectedProtocol.value}`)
+  // 先断开现有连接
+  if (ws) {
+    ws.disconnect()
+    connected.value = false
+  }
+  // 重新初始化连接
+  initWebSocket()
+}
+
+// 重连函数
+function reconnect() {
+  console.log(`[WS] Reconnecting using protocol: ${selectedProtocol.value}`)
+  // 先断开现有连接
+  if (ws) {
+    ws.disconnect()
+    connected.value = false
+  }
+  // 重新初始化连接
+  initWebSocket()
+}
+
+onMounted(() => {
+  initWebSocket()
 })
 
 onUnmounted(() => {
@@ -388,6 +475,14 @@ function formatTime(ts: number) {
   return new Date(ts * 1000).toLocaleTimeString()
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
 // 文件传输相关方法
 function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
@@ -424,14 +519,6 @@ function cancelUpload(fileId: string) {
   }
 }
 
-function formatFileSize(bytes: number) {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 function generateFileId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2)
 }
@@ -439,6 +526,12 @@ function generateFileId() {
 function getFileFromId(fileId: string) {
   const transfer = fileTransfers.value[fileId]
   return transfer ? transfer.metadata.name : fileId
+}
+
+function getFileDownloadUrl(fileId: string, fileName: string) {
+  // 后端保存文件的格式是: ./uploads/files/{fileId}-{fileName}
+  // 使用HTTP文件服务器(端口8081)提供下载
+  return `http://localhost:8081/uploads/files/${fileId}-${fileName}`
 }
 
 // 文件传输消息处理
@@ -460,7 +553,7 @@ function handleFileChunk(msg: any) {
 }
 
 function handleFileEnd(msg: any) {
-  const { file_id } = msg.payload
+  const { file_id, name, size } = msg.payload
 
   // 检查是否是我们正在上传的文件
   const uploadIndex = uploadingFiles.value.findIndex(upload =>
@@ -475,6 +568,31 @@ function handleFileEnd(msg: any) {
     upload.status = 'completed'
     upload.statusText = 'Upload completed!'
 
+    // 创建文件上传成功的聊天消息
+    const fileMessage = {
+      type: 'FILE_UPLOAD',
+      from: props.currentUser,
+      to: currentChatType.value === 'group' ? 'server' : currentChatTarget.value,
+      ts: Math.floor(Date.now() / 1000),
+      payload: {
+        fileName: upload.fileName,
+        fileSize: upload.totalSize,
+        file_id: file_id
+      }
+    }
+
+    // 添加到相应的消息列表
+    if (currentChatType.value === 'group') {
+      groupMessages.value.push(fileMessage)
+    } else {
+      if (!privateMessages.value[currentChatTarget.value]) {
+        privateMessages.value[currentChatTarget.value] = []
+      }
+      privateMessages.value[currentChatTarget.value].push(fileMessage)
+    }
+
+    updateFilteredMessages()
+
     // 3秒后移除进度条
     setTimeout(() => {
       uploadingFiles.value.splice(uploadIndex, 1)
@@ -484,7 +602,7 @@ function handleFileEnd(msg: any) {
     return
   }
 
-  // 处理接收到的文件
+  // 处理接收到的文件（其他用户发送的）
   const transfer = fileTransfers.value[file_id]
   if (transfer) {
     // 重组文件
@@ -507,6 +625,33 @@ function handleFileEnd(msg: any) {
     }
 
     console.log(`[FileTransfer] Download ready: ${transfer.metadata.name}`)
+  }
+
+  // 为所有接收者创建文件消息（包括没有接收文件数据的用户）
+  if (msg.from !== props.currentUser && name && size) {
+    const fileMessage = {
+      type: 'FILE_UPLOAD',
+      from: msg.from,
+      to: msg.to,
+      ts: msg.ts,
+      payload: {
+        fileName: name,
+        fileSize: size,
+        file_id: file_id
+      }
+    }
+
+    // 添加到相应的消息列表
+    if (msg.to === '*' || msg.to === 'server') {
+      groupMessages.value.push(fileMessage)
+    } else if (msg.to === props.currentUser) {
+      if (!privateMessages.value[msg.from]) {
+        privateMessages.value[msg.from] = []
+      }
+      privateMessages.value[msg.from].push(fileMessage)
+    }
+
+    updateFilteredMessages()
   }
 }
 
@@ -602,6 +747,7 @@ function getMessageType(msg: any) {
 function getDisplayType(type: string) {
   const typeMap: Record<string, string> = {
     'MSG_DIRECT': 'Message',
+    'FILE_UPLOAD': 'File',
     'HEARTBEAT': 'Heartbeat',
     'USER_HELLO': 'Join',
     'ERROR': 'Error',
@@ -609,13 +755,6 @@ function getDisplayType(type: string) {
     'USER_ADVERTISE': 'User Update'
   }
   return typeMap[type] || type
-}
-
-function testRateLimit() {
-  // 1秒内发送15条消息测试限流
-  for (let i = 0; i < 15; i++) {
-    setTimeout(() => sendHeartbeat(), i * 60) // 60ms间隔
-  }
 }
 
 function clearMessages() {
@@ -746,6 +885,55 @@ function getAvatarClass(from: string) {
 .status-text {
   font-size: 12px;
   color: #b9bbbe;
+}
+
+.protocol-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.protocol-select {
+  background-color: #40444b;
+  border: 1px solid #202225;
+  border-radius: 4px;
+  color: #dcddde;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.protocol-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.protocol-select:focus {
+  border-color: #5865f2;
+}
+
+.reconnect-btn {
+  background: none;
+  border: none;
+  color: #b9bbbe;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.reconnect-btn:hover:not(:disabled) {
+  background-color: #40444b;
+  color: #dcddde;
+}
+
+.reconnect-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .top-controls {
@@ -1384,6 +1572,63 @@ function getAvatarClass(from: string) {
 
 .download-link:hover {
   text-decoration: underline;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5865f2;
+}
+
+.file-details {
+  flex: 1;
+}
+
+.file-name {
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #b9bbbe;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background-color: #5865f2;
+  color: #ffffff;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.download-btn:hover {
+  background-color: #4752c4;
+}
+
+.upload-status {
+  color: #3ba55d;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* 聊天列表样式 */

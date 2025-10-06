@@ -7,6 +7,8 @@ import javax.websocket.HandshakeRequest;
 import javax.websocket.HandshakeResponse;
 import org.glassfish.tyrus.server.TyrusHandshakeRequest;
 import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.FileNotFoundException;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.logging.Logger;
@@ -51,16 +53,24 @@ public class TyrusSslConfigurator extends ServerEndpointConfig.Configurator {
 
     private static SSLContext createSecureSSLContext() throws Exception {
         KeyStore ks = KeyStore.getInstance("JKS");
-        try (FileInputStream fis = new FileInputStream("src/main/resources/" + Config.KEYSTORE_PATH)) {
-            ks.load(fis, Config.KEYSTORE_PASSWORD.toCharArray());
+        try (InputStream is = TyrusSslConfigurator.class.getClassLoader()
+            .getResourceAsStream(Config.KEYSTORE_PATH)) {
+            if (is == null) {
+                throw new FileNotFoundException("Keystore not found: " + Config.KEYSTORE_PATH);
+            }
+            ks.load(is, Config.KEYSTORE_PASSWORD.toCharArray());
         }
 
         KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
         kmf.init(ks, Config.KEYSTORE_PASSWORD.toCharArray());
 
         KeyStore ts = KeyStore.getInstance("JKS");
-        try (FileInputStream fis = new FileInputStream("src/main/resources/" + Config.TRUSTSTORE_PATH)) {
-            ts.load(fis, Config.KEYSTORE_PASSWORD.toCharArray());
+        try (InputStream is = TyrusSslConfigurator.class.getClassLoader()
+            .getResourceAsStream(Config.TRUSTSTORE_PATH)) {
+            if (is == null) {
+                throw new FileNotFoundException("Truststore not found: " + Config.TRUSTSTORE_PATH);
+            }
+            ts.load(is, Config.KEYSTORE_PASSWORD.toCharArray());
         }
 
         TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -76,10 +86,14 @@ public class TyrusSslConfigurator extends ServerEndpointConfig.Configurator {
             SSLEngine engine = sslContext.createSSLEngine(peerHost, peerPort);
             SSLParameters params = engine.getSSLParameters();
             params.setProtocols(new String[]{Config.TLS_PROTOCOL});
-            params.setCipherSuites(new String[]{"TLS_AES_256_GCM_SHA384"});
+            params.setCipherSuites(new String[]{
+                "TLS_AES_256_GCM_SHA384",
+                "TLS_AES_128_GCM_SHA256",
+                "TLS_CHACHA20_POLY1305_SHA256"
+            });
             engine.setSSLParameters(params);
             engine.setUseClientMode(false);
-            engine.setNeedClientAuth(true);
+            engine.setNeedClientAuth(false);
             return engine;
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "SSLEngine creation failed: {0}", e.getMessage());

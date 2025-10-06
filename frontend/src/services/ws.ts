@@ -147,7 +147,7 @@ export class WS {
       }
     }
 
-    // Send FILE_END
+    // Send FILE_END (include file metadata for other users)
     const fileEnd = {
       type: "FILE_END",
       from: this.currentUser,
@@ -155,7 +155,9 @@ export class WS {
       ts: Math.floor(Date.now() / 1000),
       nonce: this.generateNonce(),
       payload: {
-        file_id: fileId
+        file_id: fileId,
+        name: file.name,
+        size: file.size
       },
       sig: "dev-mock"
     };

@@ -194,7 +194,23 @@ public class ChatServer extends WebSocketServer {
                             targetConn.send(json.toString());
                         }
                     }
-                    return;
+
+                    // 对于FILE_END消息，确保payload包含文件元数据，然后继续广播
+                    if ("FILE_END".equals(type)) {
+                        JSONObject payload = json.getJSONObject("payload");
+                        // 如果前端没有发送name和size，从服务器元数据中获取
+                        if (!payload.has("name") || !payload.has("size")) {
+                            String fileId = payload.getString("file_id");
+                            FileTransferManager.FileMetadata metadata = fileTransferManager.getTransferMetadata(fileId);
+                            if (metadata != null) {
+                                payload.put("name", metadata.fileName);
+                                payload.put("size", metadata.totalSize);
+                            }
+                        }
+                        // 继续，让FILE_END消息被广播
+                    } else {
+                        return;
+                    }
                 }
             }
 
@@ -336,6 +352,10 @@ public class ChatServer extends WebSocketServer {
     public static void main(String[] args) {
         int port = 8080;
         if (args != null && args.length > 0) port = Integer.parseInt(args[0]);
+
+        // Start file server for downloads
+        FileServer.start();
+
         ChatServer s = new ChatServer(port);
         s.start();
         System.out.println("[WS] listening on ws://127.0.0.1:" + port);
