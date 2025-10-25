@@ -13,6 +13,8 @@ import java.nio.file.Paths;
 public class FileServer {
     private static final int PORT = 8081;
     private static final String UPLOADS_DIR = "./uploads/files";
+    private static final String ALLOWED_ORIGIN = "http://localhost:5173";
+    private static final long MAX_FILE_SIZE = 256 * 1024 * 1024;
 
     public static void start() {
         try {
@@ -22,10 +24,10 @@ public class FileServer {
             server.createContext("/uploads/files/", new HttpHandler() {
                 @Override
                 public void handle(HttpExchange exchange) throws IOException {
-                    // Add CORS headers
-                    exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                    exchange.getResponseHeaders().add("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
                     exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, OPTIONS");
                     exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "*");
+                    exchange.getResponseHeaders().add("Access-Control-Allow-Credentials", "true");
 
                     if ("OPTIONS".equals(exchange.getRequestMethod())) {
                         exchange.sendResponseHeaders(204, -1);
@@ -35,9 +37,29 @@ public class FileServer {
                     String requestPath = exchange.getRequestURI().getPath();
                     String fileName = requestPath.substring("/uploads/files/".length());
 
-                    Path filePath = Paths.get(UPLOADS_DIR, fileName);
+                    String sanitizedFileName = Paths.get(fileName).getFileName().toString();
+                    Path filePath = Paths.get(UPLOADS_DIR, sanitizedFileName).normalize().toAbsolutePath();
+                    Path uploadsPath = Paths.get(UPLOADS_DIR).normalize().toAbsolutePath();
+
+                    if (!filePath.startsWith(uploadsPath)) {
+                        String response = "Access denied";
+                        exchange.sendResponseHeaders(403, response.length());
+                        OutputStream os = exchange.getResponseBody();
+                        os.write(response.getBytes());
+                        os.close();
+                        return;
+                    }
 
                     if (Files.exists(filePath) && Files.isRegularFile(filePath)) {
+                        long fileSize = Files.size(filePath);
+                        if (fileSize > MAX_FILE_SIZE) {
+                            String response = "File too large";
+                            exchange.sendResponseHeaders(413, response.length());
+                            OutputStream os = exchange.getResponseBody();
+                            os.write(response.getBytes());
+                            os.close();
+                            return;
+                        }
                         byte[] fileContent = Files.readAllBytes(filePath);
 
                         // Set content type based on file extension
